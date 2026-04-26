@@ -81,38 +81,6 @@ def read_root() -> dict[str, str]:
 
 @app.get("/app", response_class=HTMLResponse)
 def app_status_page() -> HTMLResponse:
-    sample_manual_modules = """[
-  {
-    "width": 300,
-    "cabinet_type": "base",
-    "position": "end_left",
-    "content": "drawers"
-  },
-  {
-    "width": 300,
-    "cabinet_type": "base",
-    "position": "normal",
-    "content": "shelves"
-  },
-  {
-    "width": 800,
-    "cabinet_type": "base",
-    "position": "normal",
-    "content": "empty"
-  },
-  {
-    "width": 600,
-    "cabinet_type": "tall",
-    "position": "corner_left",
-    "content": "shelves"
-  },
-  {
-    "width": 600,
-    "cabinet_type": "tall",
-    "position": "end_right",
-    "content": "empty"
-  }
-]"""
     html = f"""
     <!DOCTYPE html>
     <html lang="pl">
@@ -166,14 +134,29 @@ def app_status_page() -> HTMLResponse:
                 font-size: 14px;
                 font-family: inherit;
             }}
-            textarea {{
-                min-height: 280px;
-                font-family: "Courier New", monospace;
+            select {{
+                border: 1px solid #d1d5db;
+                border-radius: 6px;
+                padding: 8px;
+                font-size: 14px;
+                font-family: inherit;
             }}
             .button-row {{
                 display: flex;
                 gap: 10px;
                 flex-wrap: wrap;
+            }}
+            .manual-module-box {{
+                max-width: 720px;
+                border: 1px solid #e5e7eb;
+                border-radius: 8px;
+                padding: 14px;
+                margin-bottom: 16px;
+            }}
+            .grid-2 {{
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 10px;
             }}
             table {{
                 border-collapse: collapse;
@@ -203,6 +186,23 @@ def app_status_page() -> HTMLResponse:
                 font-weight: 700;
                 margin-top: 10px;
             }}
+            .summary {{
+                margin-top: 12px;
+                max-width: 960px;
+                display: grid;
+                gap: 4px;
+                font-weight: 600;
+            }}
+            #manual-width-status {{
+                margin-top: 8px;
+                font-weight: 700;
+            }}
+            .status-ok {{
+                color: #15803d;
+            }}
+            .status-error {{
+                color: #b91c1c;
+            }}
         </style>
     </head>
     <body>
@@ -226,15 +226,67 @@ def app_status_page() -> HTMLResponse:
             <label>depth
                 <input id="depth" name="depth" type="number" min="1" value="600" required />
             </label>
-            <label>manual_modules
-                <textarea id="manual_modules" name="manual_modules">{sample_manual_modules}</textarea>
-            </label>
             <div class="button-row">
                 <button type="button" id="auto-btn">Utwórz projekt automatycznie</button>
                 <button type="button" id="manual-btn">Utwórz projekt z modułami ręcznymi</button>
                 <button type="button" id="clear-btn">Wyczyść formularz</button>
             </div>
         </form>
+
+        <h2>Moduły ręczne</h2>
+        <div class="manual-module-box">
+            <div class="grid-2">
+                <label>width
+                    <input id="manual_width" type="number" min="1" value="300" />
+                </label>
+                <label>cabinet_type
+                    <select id="manual_cabinet_type">
+                        <option value="base">base = szafka niska pod blat</option>
+                        <option value="tall">tall = szafka wysoka pod sufit</option>
+                    </select>
+                </label>
+                <label>position
+                    <select id="manual_position">
+                        <option value="normal">normal = normalna</option>
+                        <option value="end_left">end_left = końcowa lewa</option>
+                        <option value="end_right">end_right = końcowa prawa</option>
+                        <option value="corner_left">corner_left = narożna lewa</option>
+                        <option value="corner_right">corner_right = narożna prawa</option>
+                    </select>
+                </label>
+                <label>content
+                    <select id="manual_content">
+                        <option value="shelves">shelves = półki</option>
+                        <option value="drawers">drawers = szuflady</option>
+                        <option value="empty">empty = pusta</option>
+                    </select>
+                </label>
+            </div>
+            <div class="button-row" style="margin-top: 10px;">
+                <button type="button" id="add-module-btn">Dodaj moduł</button>
+                <button type="button" id="clear-modules-btn">Wyczyść moduły ręczne</button>
+            </div>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>nr</th>
+                    <th>width</th>
+                    <th>cabinet_type</th>
+                    <th>position</th>
+                    <th>content</th>
+                    <th>akcja</th>
+                </tr>
+            </thead>
+            <tbody id="manual-modules-body"></tbody>
+        </table>
+        <div class="summary">
+            <div id="manual-width-sum">Suma modułów: 0 mm</div>
+            <div id="project-width-info">Szerokość projektu: 0 mm</div>
+            <div id="manual-width-diff">Różnica: 0 mm</div>
+            <div id="manual-width-status" class="status-error">Suma modułów nie zgadza się z szerokością projektu</div>
+        </div>
 
         <h2>Dostępne wartości</h2>
         <table>
@@ -284,6 +336,13 @@ def app_status_page() -> HTMLResponse:
             const resultJson = document.getElementById("result-json");
             const errorBox = document.getElementById("error");
             const modulesBody = document.getElementById("modules-body");
+            const manualModulesBody = document.getElementById("manual-modules-body");
+            const manualWidthSum = document.getElementById("manual-width-sum");
+            const projectWidthInfo = document.getElementById("project-width-info");
+            const manualWidthDiff = document.getElementById("manual-width-diff");
+            const manualWidthStatus = document.getElementById("manual-width-status");
+            const projectWidthInput = document.getElementById("width");
+            const manualModules = [];
 
             function clearResult() {{
                 resultJson.textContent = "";
@@ -298,6 +357,48 @@ def app_status_page() -> HTMLResponse:
                     height: Number(document.getElementById("height").value),
                     depth: Number(document.getElementById("depth").value)
                 }};
+            }}
+
+            function updateManualSummary() {{
+                const projectWidth = Number(projectWidthInput.value) || 0;
+                const totalManualWidth = manualModules.reduce((acc, module) => acc + module.width, 0);
+                const diff = projectWidth - totalManualWidth;
+
+                manualWidthSum.textContent = `Suma modułów: ${{totalManualWidth}} mm`;
+                projectWidthInfo.textContent = `Szerokość projektu: ${{projectWidth}} mm`;
+                manualWidthDiff.textContent = `Różnica: ${{diff}} mm`;
+
+                if (totalManualWidth === projectWidth) {{
+                    manualWidthStatus.textContent = "Suma modułów zgadza się z szerokością projektu";
+                    manualWidthStatus.classList.add("status-ok");
+                    manualWidthStatus.classList.remove("status-error");
+                }} else {{
+                    manualWidthStatus.textContent = "Suma modułów nie zgadza się z szerokością projektu";
+                    manualWidthStatus.classList.add("status-error");
+                    manualWidthStatus.classList.remove("status-ok");
+                }}
+            }}
+
+            function renderManualModules() {{
+                manualModulesBody.innerHTML = "";
+                manualModules.forEach((module, index) => {{
+                    const row = document.createElement("tr");
+                    row.innerHTML = `
+                        <td>${{index + 1}}</td>
+                        <td>${{module.width}}</td>
+                        <td>${{module.cabinet_type}}</td>
+                        <td>${{module.position}}</td>
+                        <td>${{module.content}}</td>
+                        <td><button type="button" data-index="${{index}}">Usuń</button></td>
+                    `;
+                    const deleteBtn = row.querySelector("button");
+                    deleteBtn.addEventListener("click", () => {{
+                        manualModules.splice(index, 1);
+                        renderManualModules();
+                        updateManualSummary();
+                    }});
+                    manualModulesBody.appendChild(row);
+                }});
             }}
 
             function renderModules(modules) {{
@@ -322,7 +423,7 @@ def app_status_page() -> HTMLResponse:
                 try {{
                     const payload = basePayload();
                     if (useManualModules) {{
-                        payload.manual_modules = JSON.parse(document.getElementById("manual_modules").value);
+                        payload.manual_modules = manualModules;
                     }}
 
                     const response = await fetch("/projects/from-manual", {{
@@ -343,13 +444,40 @@ def app_status_page() -> HTMLResponse:
                 }}
             }}
 
+            function addManualModule() {{
+                const width = Number(document.getElementById("manual_width").value);
+                if (!Number.isInteger(width) || width <= 0) {{
+                    errorBox.textContent = "Szerokość modułu musi być dodatnią liczbą całkowitą";
+                    return;
+                }}
+                errorBox.textContent = "";
+                manualModules.push({{
+                    width,
+                    cabinet_type: document.getElementById("manual_cabinet_type").value,
+                    position: document.getElementById("manual_position").value,
+                    content: document.getElementById("manual_content").value
+                }});
+                renderManualModules();
+                updateManualSummary();
+            }}
+
             document.getElementById("auto-btn").addEventListener("click", () => sendProject(false));
             document.getElementById("manual-btn").addEventListener("click", () => sendProject(true));
+            document.getElementById("add-module-btn").addEventListener("click", addManualModule);
+            document.getElementById("clear-modules-btn").addEventListener("click", () => {{
+                manualModules.length = 0;
+                renderManualModules();
+                updateManualSummary();
+            }});
+            projectWidthInput.addEventListener("input", updateManualSummary);
             document.getElementById("clear-btn").addEventListener("click", () => {{
                 form.reset();
-                document.getElementById("manual_modules").value = `{sample_manual_modules}`;
+                manualModules.length = 0;
+                renderManualModules();
+                updateManualSummary();
                 clearResult();
             }});
+            updateManualSummary();
         </script>
     </body>
     </html>
