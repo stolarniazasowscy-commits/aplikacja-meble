@@ -5,6 +5,9 @@ from pydantic import BaseModel, Field
 
 app = FastAPI()
 
+ModuleSource = Literal["manual", "auto"]
+MANUAL_WIDTH_SUM_ERROR = "Sum of manual module widths must equal total project width"
+
 
 class ManualModuleInput(BaseModel):
     width: int = Field(gt=0)
@@ -36,12 +39,12 @@ class ProjectResponse(BaseModel):
     width: int = Field(gt=0)
     height: int = Field(gt=0)
     depth: int = Field(gt=0)
-    module_source: Literal["manual", "auto"]
+    module_source: ModuleSource
     modules: list[ModuleResponse]
 
 
 class ManualProjectResponse(BaseModel):
-    status: str
+    status: Literal["ok"]
     project: ProjectResponse
 
 
@@ -78,14 +81,11 @@ def read_root() -> dict[str, str]:
 @app.post("/projects/from-manual", response_model=ManualProjectResponse)
 def create_project_from_manual(payload: ManualProjectRequest) -> ManualProjectResponse:
     if payload.manual_modules is None:
-        module_source: Literal["manual", "auto"] = "auto"
+        module_source: ModuleSource = "auto"
         modules = generate_modules(payload.width, payload.height, payload.depth)
     else:
         if sum(module.width for module in payload.manual_modules) != payload.width:
-            raise HTTPException(
-                status_code=400,
-                detail="Sum of manual module widths must equal total project width",
-            )
+            raise HTTPException(status_code=400, detail=MANUAL_WIDTH_SUM_ERROR)
 
         module_source = "manual"
         modules = []
