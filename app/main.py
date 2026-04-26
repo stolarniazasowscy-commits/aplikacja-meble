@@ -1,6 +1,7 @@
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 app = FastAPI()
@@ -76,6 +77,74 @@ def generate_modules(width: int, height: int, depth: int) -> list[ModuleResponse
 @app.get("/")
 def read_root() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/view", response_class=HTMLResponse)
+def view_modules() -> HTMLResponse:
+    modules = [
+        {"width": 300, "module_type": "base_cabinet"},
+        {"width": 300, "module_type": "base_cabinet"},
+        {"width": 800, "module_type": "base_cabinet"},
+        {"width": 600, "module_type": "tall_cabinet"},
+        {"width": 600, "module_type": "tall_cabinet"},
+    ]
+
+    module_boxes: list[str] = []
+    for module in modules:
+        is_tall = module["module_type"] == "tall_cabinet"
+        module_height = 200 if is_tall else 100
+        module_color = "lightgreen" if is_tall else "lightblue"
+        module_label = "tall" if is_tall else "base"
+        module_boxes.append(
+            f"""
+            <div class="module" style="width: {module['width']}px; height: {module_height}px; background: {module_color};">
+                <div>{module['width']}</div>
+                <div>{module_label}</div>
+            </div>
+            """
+        )
+
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <title>Module View</title>
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                margin: 24px;
+            }}
+            .canvas {{
+                display: flex;
+                align-items: flex-end;
+                gap: 8px;
+                border: 1px solid #ddd;
+                padding: 12px;
+                overflow-x: auto;
+            }}
+            .module {{
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                border: 1px solid #333;
+                box-sizing: border-box;
+                color: #111;
+                font-size: 14px;
+                flex: 0 0 auto;
+            }}
+        </style>
+    </head>
+    <body>
+        <h1>2D Module Visualization</h1>
+        <div class="canvas">
+            {''.join(module_boxes)}
+        </div>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html)
 
 
 @app.post("/projects/from-manual", response_model=ManualProjectResponse)
