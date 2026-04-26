@@ -79,6 +79,11 @@ def read_root() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/app", response_class=HTMLResponse)
+def app_status_page() -> HTMLResponse:
+    return HTMLResponse(content="<h1>Aplikacja meblowa</h1><p>Działa</p>")
+
+
 @app.get("/view", response_class=HTMLResponse)
 def view_modules() -> HTMLResponse:
     modules = [
