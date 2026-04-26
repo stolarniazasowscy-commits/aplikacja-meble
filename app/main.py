@@ -1,7 +1,16 @@
-from fastapi import FastAPI
+from typing import Literal
+
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 app = FastAPI()
+
+
+class ManualModuleInput(BaseModel):
+    width: int = Field(gt=0)
+    cabinet_type: Literal["base", "tall"]
+    position: Literal["normal", "end_left", "end_right", "corner_left", "corner_right"]
+    content: Literal["shelves", "drawers", "empty"]
 
 
 class ManualProjectRequest(BaseModel):
@@ -9,6 +18,7 @@ class ManualProjectRequest(BaseModel):
     width: int = Field(gt=0)
     height: int = Field(gt=0)
     depth: int = Field(gt=0)
+    manual_modules: list[ManualModuleInput] | None = None
 
 
 class ModuleResponse(BaseModel):
@@ -17,6 +27,8 @@ class ModuleResponse(BaseModel):
     width: int = Field(gt=0)
     height: int = Field(gt=0)
     depth: int = Field(gt=0)
+    position: Literal["normal", "end_left", "end_right", "corner_left", "corner_right"]
+    content: Literal["shelves", "drawers", "empty"]
 
 
 class ProjectResponse(BaseModel):
@@ -24,6 +36,7 @@ class ProjectResponse(BaseModel):
     width: int = Field(gt=0)
     height: int = Field(gt=0)
     depth: int = Field(gt=0)
+    module_source: Literal["manual", "auto"]
     modules: list[ModuleResponse]
 
 
@@ -49,6 +62,8 @@ def generate_modules(width: int, height: int, depth: int) -> list[ModuleResponse
                 width=module_width,
                 height=height,
                 depth=depth,
+                position="normal",
+                content="empty",
             )
         )
 
@@ -62,12 +77,39 @@ def read_root() -> dict[str, str]:
 
 @app.post("/projects/from-manual", response_model=ManualProjectResponse)
 def create_project_from_manual(payload: ManualProjectRequest) -> ManualProjectResponse:
-    modules = generate_modules(payload.width, payload.height, payload.depth)
+    if payload.manual_modules is None:
+        module_source: Literal["manual", "auto"] = "auto"
+        modules = generate_modules(payload.width, payload.height, payload.depth)
+    else:
+        if sum(module.width for module in payload.manual_modules) != payload.width:
+            raise HTTPException(
+                status_code=400,
+                detail="Sum of manual module widths must equal total project width",
+            )
+
+        module_source = "manual"
+        modules = []
+        for idx, module in enumerate(payload.manual_modules, start=1):
+            module_type = "base_cabinet" if module.cabinet_type == "base" else "tall_cabinet"
+            module_height = 720 if module.cabinet_type == "base" else payload.height
+            modules.append(
+                ModuleResponse(
+                    module_id=f"M{idx}",
+                    module_type=module_type,
+                    width=module.width,
+                    height=module_height,
+                    depth=payload.depth,
+                    position=module.position,
+                    content=module.content,
+                )
+            )
+
     project = ProjectResponse(
         project_name=payload.project_name,
         width=payload.width,
         height=payload.height,
         depth=payload.depth,
+        module_source=module_source,
         modules=modules,
     )
     return ManualProjectResponse(status="ok", project=project)
