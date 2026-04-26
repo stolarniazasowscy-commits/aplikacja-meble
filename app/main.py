@@ -15,6 +15,11 @@ class ManualModuleInput(BaseModel):
     cabinet_type: Literal["base", "tall"]
     position: Literal["normal", "end_left", "end_right", "corner_left", "corner_right"]
     content: Literal["shelves", "drawers", "empty"]
+    base_construction: Literal["legs", "side_to_floor_left", "side_to_floor_right", "side_to_floor_both"] = "legs"
+    bottom_rail_mode: Literal["sides_on_bottom", "bottom_between_sides"] = "sides_on_bottom"
+    top_mode: Literal["full_top_on_sides", "full_top_between_sides", "traverses"] = "full_top_on_sides"
+    front_type: Literal["none", "doors", "drawers"] = "none"
+    front_count: int = Field(default=0, ge=0)
 
 
 class ManualProjectRequest(BaseModel):
@@ -22,6 +27,8 @@ class ManualProjectRequest(BaseModel):
     width: int = Field(gt=0)
     height: int = Field(gt=0)
     depth: int = Field(gt=0)
+    board_thickness: int = Field(default=18, gt=0)
+    back_thickness: int = Field(default=3, gt=0)
     manual_modules: list[ManualModuleInput] | None = None
 
 
@@ -33,6 +40,20 @@ class ModuleResponse(BaseModel):
     depth: int = Field(gt=0)
     position: Literal["normal", "end_left", "end_right", "corner_left", "corner_right"]
     content: Literal["shelves", "drawers", "empty"]
+    base_construction: Literal["legs", "side_to_floor_left", "side_to_floor_right", "side_to_floor_both"] = "legs"
+    bottom_rail_mode: Literal["sides_on_bottom", "bottom_between_sides"] = "sides_on_bottom"
+    top_mode: Literal["full_top_on_sides", "full_top_between_sides", "traverses"] = "full_top_on_sides"
+    front_type: Literal["none", "doors", "drawers"] = "none"
+    front_count: int = Field(default=0, ge=0)
+
+
+class PartResponse(BaseModel):
+    module_id: str
+    part_type: str
+    width: int = Field(gt=0)
+    height: int | None = Field(default=None, gt=0)
+    depth: int | None = Field(default=None, gt=0)
+    thickness: int = Field(gt=0)
 
 
 class ProjectResponse(BaseModel):
@@ -40,8 +61,11 @@ class ProjectResponse(BaseModel):
     width: int = Field(gt=0)
     height: int = Field(gt=0)
     depth: int = Field(gt=0)
+    board_thickness: int = Field(gt=0)
+    back_thickness: int = Field(gt=0)
     module_source: ModuleSource
     modules: list[ModuleResponse]
+    parts: list[PartResponse]
 
 
 class ManualProjectResponse(BaseModel):
@@ -68,10 +92,134 @@ def generate_modules(width: int, height: int, depth: int) -> list[ModuleResponse
                 depth=depth,
                 position="normal",
                 content="empty",
+                base_construction="legs",
+                bottom_rail_mode="sides_on_bottom",
+                top_mode="full_top_on_sides",
+                front_type="none",
+                front_count=0,
             )
         )
 
     return modules
+
+
+def generate_base_parts(module: ModuleResponse, board_thickness: int, back_thickness: int) -> list[PartResponse]:
+    parts: list[PartResponse] = []
+    side_left_to_floor = module.base_construction in {"side_to_floor_left", "side_to_floor_both"}
+    side_right_to_floor = module.base_construction in {"side_to_floor_right", "side_to_floor_both"}
+
+    if module.position != "end_left":
+        parts.append(
+            PartResponse(
+                module_id=module.module_id,
+                part_type="side_left",
+                width=module.depth,
+                height=820 if side_left_to_floor else 720,
+                depth=module.depth,
+                thickness=board_thickness,
+            )
+        )
+
+    if module.position != "end_right":
+        parts.append(
+            PartResponse(
+                module_id=module.module_id,
+                part_type="side_right",
+                width=module.depth,
+                height=820 if side_right_to_floor else 720,
+                depth=module.depth,
+                thickness=board_thickness,
+            )
+        )
+
+    bottom_width = module.width if module.bottom_rail_mode == "sides_on_bottom" else module.width - (2 * board_thickness)
+    parts.append(
+        PartResponse(
+            module_id=module.module_id,
+            part_type="bottom",
+            width=bottom_width,
+            depth=module.depth,
+            thickness=board_thickness,
+        )
+    )
+
+    if module.top_mode == "full_top_on_sides":
+        parts.append(
+            PartResponse(
+                module_id=module.module_id,
+                part_type="top",
+                width=module.width,
+                depth=module.depth,
+                thickness=board_thickness,
+            )
+        )
+    elif module.top_mode == "full_top_between_sides":
+        parts.append(
+            PartResponse(
+                module_id=module.module_id,
+                part_type="top",
+                width=module.width - (2 * board_thickness),
+                depth=module.depth,
+                thickness=board_thickness,
+            )
+        )
+    else:
+        traverse_width = module.width - (2 * board_thickness)
+        parts.append(
+            PartResponse(
+                module_id=module.module_id,
+                part_type="traverse_front",
+                width=traverse_width,
+                depth=100,
+                thickness=board_thickness,
+            )
+        )
+        parts.append(
+            PartResponse(
+                module_id=module.module_id,
+                part_type="traverse_back",
+                width=traverse_width,
+                depth=100,
+                thickness=board_thickness,
+            )
+        )
+
+    parts.append(
+        PartResponse(
+            module_id=module.module_id,
+            part_type="back",
+            width=module.width,
+            height=module.height,
+            thickness=back_thickness,
+        )
+    )
+
+    if module.front_type == "doors":
+        front_count = module.front_count if module.front_count > 0 else 1
+        for _ in range(front_count):
+            parts.append(
+                PartResponse(
+                    module_id=module.module_id,
+                    part_type="door_front",
+                    width=module.width // front_count,
+                    height=module.height,
+                    thickness=board_thickness,
+                )
+            )
+    elif module.front_type == "drawers":
+        front_count = module.front_count if module.front_count > 0 else 3
+        for _ in range(front_count):
+            parts.append(
+                PartResponse(
+                    module_id=module.module_id,
+                    part_type="drawer_front",
+                    width=module.width,
+                    height=module.height // front_count,
+                    thickness=board_thickness,
+                )
+            )
+
+    return parts
 
 
 @app.get("/")
@@ -226,6 +374,12 @@ def app_status_page() -> HTMLResponse:
             <label>depth
                 <input id="depth" name="depth" type="number" min="1" value="600" required />
             </label>
+            <label>board_thickness
+                <input id="board_thickness" name="board_thickness" type="number" min="1" value="18" required />
+            </label>
+            <label>back_thickness
+                <input id="back_thickness" name="back_thickness" type="number" min="1" value="3" required />
+            </label>
             <div class="button-row">
                 <button type="button" id="auto-btn">Utwórz projekt automatycznie</button>
                 <button type="button" id="manual-btn">Utwórz projekt z modułami ręcznymi</button>
@@ -261,6 +415,37 @@ def app_status_page() -> HTMLResponse:
                         <option value="empty">empty = pusta</option>
                     </select>
                 </label>
+                <label>base_construction
+                    <select id="manual_base_construction">
+                        <option value="legs">legs = na nogach</option>
+                        <option value="side_to_floor_left">side_to_floor_left = lewy bok do podłogi</option>
+                        <option value="side_to_floor_right">side_to_floor_right = prawy bok do podłogi</option>
+                        <option value="side_to_floor_both">side_to_floor_both = oba boki do podłogi</option>
+                    </select>
+                </label>
+                <label>bottom_rail_mode
+                    <select id="manual_bottom_rail_mode">
+                        <option value="sides_on_bottom">sides_on_bottom = boki stoją na wieńcu dolnym</option>
+                        <option value="bottom_between_sides">bottom_between_sides = wieniec między bokami</option>
+                    </select>
+                </label>
+                <label>top_mode
+                    <select id="manual_top_mode">
+                        <option value="full_top_on_sides">full_top_on_sides = pełny na bokach</option>
+                        <option value="full_top_between_sides">full_top_between_sides = pełny między bokami</option>
+                        <option value="traverses">traverses = listwy/trawersy</option>
+                    </select>
+                </label>
+                <label>front_type
+                    <select id="manual_front_type">
+                        <option value="none">none = brak frontów</option>
+                        <option value="doors">doors = fronty drzwiowe</option>
+                        <option value="drawers">drawers = fronty szuflad</option>
+                    </select>
+                </label>
+                <label>front_count
+                    <input id="manual_front_count" type="number" min="0" value="0" />
+                </label>
             </div>
             <div class="button-row" style="margin-top: 10px;">
                 <button type="button" id="add-module-btn">Dodaj moduł</button>
@@ -276,6 +461,11 @@ def app_status_page() -> HTMLResponse:
                     <th>cabinet_type</th>
                     <th>position</th>
                     <th>content</th>
+                    <th>base_construction</th>
+                    <th>bottom_rail_mode</th>
+                    <th>top_mode</th>
+                    <th>front_type</th>
+                    <th>front_count</th>
                     <th>akcja</th>
                 </tr>
             </thead>
@@ -330,6 +520,20 @@ def app_status_page() -> HTMLResponse:
             </thead>
             <tbody id="modules-body"></tbody>
         </table>
+        <h2>Parts projektu</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>module_id</th>
+                    <th>part_type</th>
+                    <th>width</th>
+                    <th>height</th>
+                    <th>depth</th>
+                    <th>thickness</th>
+                </tr>
+            </thead>
+            <tbody id="parts-body"></tbody>
+        </table>
 
         <script>
             const form = document.getElementById("project-form");
@@ -342,12 +546,14 @@ def app_status_page() -> HTMLResponse:
             const manualWidthDiff = document.getElementById("manual-width-diff");
             const manualWidthStatus = document.getElementById("manual-width-status");
             const projectWidthInput = document.getElementById("width");
+            const partsBody = document.getElementById("parts-body");
             const manualModules = [];
 
             function clearResult() {{
                 resultJson.textContent = "";
                 errorBox.textContent = "";
                 modulesBody.innerHTML = "";
+                partsBody.innerHTML = "";
             }}
 
             function basePayload() {{
@@ -355,7 +561,9 @@ def app_status_page() -> HTMLResponse:
                     project_name: document.getElementById("project_name").value,
                     width: Number(document.getElementById("width").value),
                     height: Number(document.getElementById("height").value),
-                    depth: Number(document.getElementById("depth").value)
+                    depth: Number(document.getElementById("depth").value),
+                    board_thickness: Number(document.getElementById("board_thickness").value),
+                    back_thickness: Number(document.getElementById("back_thickness").value)
                 }};
             }}
 
@@ -389,6 +597,11 @@ def app_status_page() -> HTMLResponse:
                         <td>${{module.cabinet_type}}</td>
                         <td>${{module.position}}</td>
                         <td>${{module.content}}</td>
+                        <td>${{module.base_construction}}</td>
+                        <td>${{module.bottom_rail_mode}}</td>
+                        <td>${{module.top_mode}}</td>
+                        <td>${{module.front_type}}</td>
+                        <td>${{module.front_count}}</td>
                         <td><button type="button" data-index="${{index}}">Usuń</button></td>
                     `;
                     const deleteBtn = row.querySelector("button");
@@ -399,6 +612,22 @@ def app_status_page() -> HTMLResponse:
                     }});
                     manualModulesBody.appendChild(row);
                 }});
+            }}
+
+            function renderParts(parts) {{
+                partsBody.innerHTML = "";
+                for (const part of parts) {{
+                    const row = document.createElement("tr");
+                    row.innerHTML = `
+                        <td>${{part.module_id}}</td>
+                        <td>${{part.part_type}}</td>
+                        <td>${{part.width}}</td>
+                        <td>${{part.height ?? ""}}</td>
+                        <td>${{part.depth ?? ""}}</td>
+                        <td>${{part.thickness}}</td>
+                    `;
+                    partsBody.appendChild(row);
+                }}
             }}
 
             function renderModules(modules) {{
@@ -439,6 +668,7 @@ def app_status_page() -> HTMLResponse:
 
                     resultJson.textContent = JSON.stringify(data, null, 2);
                     renderModules(data.project?.modules || []);
+                    renderParts(data.project?.parts || []);
                 }} catch (error) {{
                     errorBox.textContent = error.message;
                 }}
@@ -450,12 +680,22 @@ def app_status_page() -> HTMLResponse:
                     errorBox.textContent = "Szerokość modułu musi być dodatnią liczbą całkowitą";
                     return;
                 }}
+                const frontCount = Number(document.getElementById("manual_front_count").value);
+                if (!Number.isInteger(frontCount) || frontCount < 0) {{
+                    errorBox.textContent = "front_count musi być liczbą całkowitą >= 0";
+                    return;
+                }}
                 errorBox.textContent = "";
                 manualModules.push({{
                     width,
                     cabinet_type: document.getElementById("manual_cabinet_type").value,
                     position: document.getElementById("manual_position").value,
-                    content: document.getElementById("manual_content").value
+                    content: document.getElementById("manual_content").value,
+                    base_construction: document.getElementById("manual_base_construction").value,
+                    bottom_rail_mode: document.getElementById("manual_bottom_rail_mode").value,
+                    top_mode: document.getElementById("manual_top_mode").value,
+                    front_type: document.getElementById("manual_front_type").value,
+                    front_count: frontCount
                 }});
                 renderManualModules();
                 updateManualSummary();
@@ -558,33 +798,100 @@ def create_project_from_manual(payload: ManualProjectRequest) -> ManualProjectRe
     if payload.manual_modules is None:
         module_source: ModuleSource = "auto"
         modules = generate_modules(payload.width, payload.height, payload.depth)
+        parts: list[PartResponse] = []
     else:
         if sum(module.width for module in payload.manual_modules) != payload.width:
             raise HTTPException(status_code=400, detail=MANUAL_WIDTH_SUM_ERROR)
 
         module_source = "manual"
         modules = []
+        parts = []
         for idx, module in enumerate(payload.manual_modules, start=1):
+            if module.width - (2 * payload.board_thickness) <= 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Nieprawidłowa szerokość modułu M{idx}: "
+                        "module.width - 2 * board_thickness musi być > 0"
+                    ),
+                )
             module_type = "base_cabinet" if module.cabinet_type == "base" else "tall_cabinet"
             module_height = 720 if module.cabinet_type == "base" else payload.height
-            modules.append(
-                ModuleResponse(
-                    module_id=f"M{idx}",
-                    module_type=module_type,
-                    width=module.width,
-                    height=module_height,
-                    depth=payload.depth,
-                    position=module.position,
-                    content=module.content,
-                )
+            response_module = ModuleResponse(
+                module_id=f"M{idx}",
+                module_type=module_type,
+                width=module.width,
+                height=module_height,
+                depth=payload.depth,
+                position=module.position,
+                content=module.content,
+                base_construction=module.base_construction,
+                bottom_rail_mode=module.bottom_rail_mode,
+                top_mode=module.top_mode,
+                front_type=module.front_type,
+                front_count=module.front_count,
             )
+            modules.append(response_module)
+            if module.cabinet_type == "base":
+                parts.extend(
+                    generate_base_parts(
+                        module=response_module,
+                        board_thickness=payload.board_thickness,
+                        back_thickness=payload.back_thickness,
+                    )
+                )
+            else:
+                parts.extend(
+                    [
+                        PartResponse(
+                            module_id=response_module.module_id,
+                            part_type="side_left",
+                            width=response_module.depth,
+                            height=response_module.height,
+                            depth=response_module.depth,
+                            thickness=payload.board_thickness,
+                        ),
+                        PartResponse(
+                            module_id=response_module.module_id,
+                            part_type="side_right",
+                            width=response_module.depth,
+                            height=response_module.height,
+                            depth=response_module.depth,
+                            thickness=payload.board_thickness,
+                        ),
+                        PartResponse(
+                            module_id=response_module.module_id,
+                            part_type="bottom",
+                            width=response_module.width,
+                            depth=response_module.depth,
+                            thickness=payload.board_thickness,
+                        ),
+                        PartResponse(
+                            module_id=response_module.module_id,
+                            part_type="top",
+                            width=response_module.width,
+                            depth=response_module.depth,
+                            thickness=payload.board_thickness,
+                        ),
+                        PartResponse(
+                            module_id=response_module.module_id,
+                            part_type="back",
+                            width=response_module.width,
+                            height=response_module.height,
+                            thickness=payload.back_thickness,
+                        ),
+                    ]
+                )
 
     project = ProjectResponse(
         project_name=payload.project_name,
         width=payload.width,
         height=payload.height,
         depth=payload.depth,
+        board_thickness=payload.board_thickness,
+        back_thickness=payload.back_thickness,
         module_source=module_source,
         modules=modules,
+        parts=parts,
     )
     return ManualProjectResponse(status="ok", project=project)
