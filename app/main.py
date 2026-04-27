@@ -469,30 +469,43 @@ def app_status_page() -> HTMLResponse:
             <section class="card">
                 <h2>Formularz projektu</h2>
                 <form id="project-form">
+                    <h3>Dane ogólne projektu</h3>
                     <div class="form-grid">
-                        <label>project_name<input id="project_name" name="project_name" value="Projekt testowy" required /></label>
-                        <label>width<input id="width" name="width" type="number" min="1" value="2600" required /></label>
-                        <label>height<input id="height" name="height" type="number" min="1" value="2400" required /></label>
-                        <label>depth<input id="depth" name="depth" type="number" min="1" value="600" required /></label>
-                        <label>base_height<input id="base_height" name="base_height" type="number" min="1" value="720" required /></label>
-                        <label>leg_height<input id="leg_height" name="leg_height" type="number" min="0" value="100" required /></label>
-                        <label>board_thickness<input id="board_thickness" name="board_thickness" type="number" min="1" value="18" required /></label>
-                        <label>back_thickness<input id="back_thickness" name="back_thickness" type="number" min="1" value="3" required /></label>
-                        <label>back_type
-                            <select id="back_type" name="back_type">
-                                <option value="overlay">overlay = plecy nakładane</option>
-                                <option value="groove">groove = plecy wpuszczane w kanalik</option>
-                                <option value="between">between = plecy między bokami</option>
+                        <label>Nazwa projektu<input id="project_name" name="project_name" value="Projekt testowy" required /></label>
+                        <label>Szerokość całkowita [mm]<input id="width" name="width" type="number" min="1" value="2600" required /></label>
+                        <label>Wysokość całkowita [mm]<input id="height" name="height" type="number" min="1" value="2400" required /></label>
+                        <label>Głębokość całkowita [mm]<input id="depth" name="depth" type="number" min="1" value="600" required /></label>
+                        <label>Kształt zabudowy
+                            <select id="layout_shape" name="layout_shape">
+                                <option value="straight">Prosta</option>
+                                <option value="l_shape">L-kształt</option>
+                                <option value="u_shape">U-kształt</option>
                             </select>
                         </label>
+                    </div>
+
+                    <h3 style="margin-top:16px;">Parametry technologiczne</h3>
+                    <div class="form-grid">
+                        <label>Grubość płyty [mm]<input id="board_thickness" name="board_thickness" type="number" min="1" value="18" required /></label>
+                        <label>Grubość pleców [mm]<input id="back_thickness" name="back_thickness" type="number" min="1" value="3" required /></label>
+                        <label>Rodzaj pleców
+                            <select id="back_type" name="back_type">
+                                <option value="overlay">Nakładane</option>
+                                <option value="groove">Wpuszczane w kanalik</option>
+                                <option value="between">Między bokami</option>
+                            </select>
+                        </label>
+                        <label>Cofnięcie kanalika od tyłu [mm]<input id="back_groove_offset" name="back_groove_offset" type="number" min="0" value="10" required /></label>
+                        <label>Wpuszczenie pleców w kanalik [mm]<input id="back_groove_insert" name="back_groove_insert" type="number" min="0" value="3" required /></label>
+                        <label>Wysokość szafki dolnej [mm]<input id="base_height" name="base_height" type="number" min="1" value="720" required /></label>
+                        <label>Wysokość nóg [mm]<input id="leg_height" name="leg_height" type="number" min="0" value="100" required /></label>
                         <label>back_groove_offset<input id="back_groove_offset" name="back_groove_offset" type="number" min="0" value="10" required /></label>
                         <label>back_groove_insert<input id="back_groove_insert" name="back_groove_insert" type="number" min="0" value="10" required /></label>
                     </div>
                     <div id="back-type-description" class="hint" style="display:block;background:#eef2ff;border-color:#a5b4fc;color:#3730a3;"></div>
                     <div class="button-row">
                         <button class="btn-primary" type="button" id="auto-btn">Utwórz projekt automatycznie</button>
-                        <button class="btn-secondary" type="button" id="manual-btn">Utwórz projekt z modułami ręcznymi</button>
-                        <button class="btn-danger" type="button" id="clear-btn">Wyczyść formularz</button>
+                        <button class="btn-secondary" type="button" id="manual-btn">Utwórz projekt ręcznie</button>
                     </div>
                 </form>
             </section>
@@ -500,69 +513,69 @@ def app_status_page() -> HTMLResponse:
             <section class="card">
                 <h2>Moduły ręczne</h2>
                 <div class="form-grid">
-                    <label>width<input id="manual_width" type="number" min="1" value="300" /></label>
-                    <label>cabinet_type
+                    <label>Szerokość modułu [mm]<input id="manual_width" type="number" min="1" value="300" /></label>
+                    <label>Typ szafki
                         <select id="manual_cabinet_type">
-                            <option value="base">base = szafka niska pod blat</option>
-                            <option value="tall">tall = szafka wysoka pod sufit</option>
+                            <option value="base">Szafka dolna</option>
+                            <option value="tall">Szafka wysoka</option>
                         </select>
                     </label>
-                    <label>position
+                    <label>Pozycja
                         <select id="manual_position">
-                            <option value="normal">normal = normalna</option>
-                            <option value="end_left">end_left = końcowa lewa</option>
-                            <option value="end_right">end_right = końcowa prawa</option>
-                            <option value="corner_left">corner_left = narożna lewa</option>
-                            <option value="corner_right">corner_right = narożna prawa</option>
+                            <option value="normal">Normalna</option>
+                            <option value="end_left">Końcowa lewa</option>
+                            <option value="end_right">Końcowa prawa</option>
+                            <option value="corner_left">Narożna lewa</option>
+                            <option value="corner_right">Narożna prawa</option>
                         </select>
                     </label>
-                    <label>content
+                    <label>Zawartość
                         <select id="manual_content">
-                            <option value="shelves">shelves = półki</option>
-                            <option value="drawers">drawers = szuflady</option>
-                            <option value="empty">empty = pusta</option>
+                            <option value="shelves">Półki</option>
+                            <option value="drawers">Szuflady</option>
+                            <option value="empty">Pusta</option>
                         </select>
                     </label>
-                    <label>has_legs
+                    <label>Nogi
                         <select id="manual_has_legs">
                             <option value="true">Tak</option>
                             <option value="false">Nie</option>
                         </select>
                     </label>
-                    <label>side_to_floor
+                    <label>Bok do podłogi
                         <select id="manual_side_to_floor">
-                            <option value="none">none = żaden bok do podłogi</option>
-                            <option value="left">left = lewy bok do podłogi</option>
-                            <option value="right">right = prawy bok do podłogi</option>
-                            <option value="both">both = oba boki do podłogi</option>
+                            <option value="none">Brak</option>
+                            <option value="left">Lewy</option>
+                            <option value="right">Prawy</option>
+                            <option value="both">Oba</option>
                         </select>
                     </label>
-                    <label>bottom_rail_mode
+                    <label>Wieniec dolny
                         <select id="manual_bottom_rail_mode">
-                            <option value="sides_on_bottom">sides_on_bottom = boki stoją na wieńcu dolnym</option>
-                            <option value="bottom_between_sides">bottom_between_sides = wieniec między bokami</option>
+                            <option value="sides_on_bottom">Boki stoją na wieńcu</option>
+                            <option value="bottom_between_sides">Wieniec między bokami</option>
                         </select>
                     </label>
-                    <label>top_mode
+                    <label>Wieniec górny
                         <select id="manual_top_mode">
-                            <option value="full_top_on_sides">full_top_on_sides = pełny na bokach</option>
-                            <option value="full_top_between_sides">full_top_between_sides = pełny między bokami</option>
-                            <option value="traverses">traverses = listwy/trawersy</option>
+                            <option value="full_top_on_sides">Na bokach</option>
+                            <option value="full_top_between_sides">Między bokami</option>
+                            <option value="traverses">Trawersy</option>
                         </select>
                     </label>
-                    <label>front_type
+                    <label>Front
                         <select id="manual_front_type">
-                            <option value="none">none = brak frontów</option>
-                            <option value="doors">doors = fronty drzwiowe</option>
-                            <option value="drawers">drawers = fronty szuflad</option>
+                            <option value="none">Brak</option>
+                            <option value="doors">Drzwiczki</option>
+                            <option value="drawers">Szuflady</option>
                         </select>
                     </label>
-                    <label>front_count<input id="manual_front_count" type="number" min="0" value="0" /></label>
+                    <label>Ilość frontów<input id="manual_front_count" type="number" min="0" value="0" /></label>
                 </div>
                 <div id="side-floor-hint" class="hint">Wieniec dolny jest wymuszony między bokami tylko wtedy, gdy oba boki schodzą do podłogi.</div>
                 <div class="button-row">
                     <button class="btn-primary" type="button" id="add-module-btn">Dodaj moduł</button>
-                    <button class="btn-danger" type="button" id="clear-modules-btn">Wyczyść moduły ręczne</button>
+                    <button class="btn-danger" type="button" id="clear-modules-btn">Wyczyść moduły</button>
                 </div>
             </section>
 
@@ -572,8 +585,7 @@ def app_status_page() -> HTMLResponse:
                     <table>
                         <thead>
                             <tr>
-                                <th>nr</th><th>width</th><th>cabinet_type</th><th>position</th><th>content</th>
-                                <th>has_legs</th><th>side_to_floor</th><th>bottom_rail_mode</th><th>top_mode</th><th>front_type</th><th>front_count</th><th>akcja</th>
+                                <th>Nr</th><th>Szerokość</th><th>Typ</th><th>Pozycja</th><th>Zawartość</th><th>Usuń</th>
                             </tr>
                         </thead>
                         <tbody id="manual-modules-body"></tbody>
@@ -583,12 +595,12 @@ def app_status_page() -> HTMLResponse:
                     <div id="manual-width-sum">Suma modułów: 0 mm</div>
                     <div id="project-width-info">Szerokość projektu: 0 mm</div>
                     <div id="manual-width-diff">Różnica: 0 mm</div>
-                    <div id="manual-width-status" class="status-error">Suma modułów nie zgadza się z szerokością projektu</div>
+                    <div id="manual-width-status" class="status-error">Suma modułów NIE zgadza się z szerokością projektu</div>
                 </div>
             </section>
 
             <section class="card">
-                <h2>Wynik JSON</h2>
+                <h2>Wynik obliczeń (JSON)</h2>
                 <div id="error"></div>
                 <pre id="result-json"></pre>
             </section>
@@ -599,8 +611,7 @@ def app_status_page() -> HTMLResponse:
                     <table>
                         <thead>
                             <tr>
-                                <th>module_id</th><th>module_type</th><th>width</th><th>height</th><th>depth</th><th>position</th><th>content</th>
-                                <th>has_legs</th><th>side_to_floor</th><th>bottom_rail_mode</th><th>top_mode</th><th>front_type</th><th>front_count</th>
+                                <th>Nr</th><th>Szerokość</th><th>Typ</th><th>Pozycja</th><th>Zawartość</th>
                             </tr>
                         </thead>
                         <tbody id="modules-body"></tbody>
@@ -609,11 +620,11 @@ def app_status_page() -> HTMLResponse:
             </section>
 
             <section class="card">
-                <h2>Parts projektu</h2>
+                <h2>Tabela elementów</h2>
                 <div class="table-wrap">
                     <table>
                         <thead>
-                            <tr><th>module_id</th><th>part_type</th><th>length</th><th>width</th><th>thickness</th></tr>
+                            <tr><th>Moduł</th><th>Element</th><th>Długość</th><th>Szerokość</th><th>Grubość</th></tr>
                         </thead>
                         <tbody id="parts-body"></tbody>
                     </table>
@@ -622,7 +633,6 @@ def app_status_page() -> HTMLResponse:
         </div>
 
         <script>
-            const form = document.getElementById("project-form");
             const resultJson = document.getElementById("result-json");
             const errorBox = document.getElementById("error");
             const modulesBody = document.getElementById("modules-body");
@@ -640,6 +650,26 @@ def app_status_page() -> HTMLResponse:
             const backTypeDescription = document.getElementById("back-type-description");
             const backThicknessInput = document.getElementById("back_thickness");
             const manualModules = [];
+            const cabinetTypeLabels = { base: "Szafka dolna", tall: "Szafka wysoka" };
+            const positionLabels = {
+                normal: "Normalna",
+                end_left: "Końcowa lewa",
+                end_right: "Końcowa prawa",
+                corner_left: "Narożna lewa",
+                corner_right: "Narożna prawa"
+            };
+            const contentLabels = { shelves: "Półki", drawers: "Szuflady", empty: "Pusta" };
+            const partTypeLabels = {
+                side_left: "Bok lewy",
+                side_right: "Bok prawy",
+                bottom: "Wieniec dolny",
+                top: "Wieniec górny",
+                traverse_front: "Trawers przedni",
+                traverse_back: "Trawers tylny",
+                back: "Plecy",
+                door_front: "Front drzwiowy",
+                drawer_front: "Front szuflady"
+            };
 
             function clearResult() {
                 resultJson.textContent = "";
@@ -703,7 +733,7 @@ def app_status_page() -> HTMLResponse:
                     manualWidthStatus.classList.add("status-ok");
                     manualWidthStatus.classList.remove("status-error");
                 } else {
-                    manualWidthStatus.textContent = "Suma modułów nie zgadza się z szerokością projektu";
+                    manualWidthStatus.textContent = "Suma modułów NIE zgadza się z szerokością projektu";
                     manualWidthStatus.classList.add("status-error");
                     manualWidthStatus.classList.remove("status-ok");
                 }
@@ -714,8 +744,7 @@ def app_status_page() -> HTMLResponse:
                 manualModules.forEach((module, index) => {
                     const row = document.createElement("tr");
                     row.innerHTML = `
-                        <td>${index + 1}</td><td>${module.width}</td><td>${module.cabinet_type}</td><td>${module.position}</td><td>${module.content}</td>
-                        <td>${module.has_legs ? "Tak" : "Nie"}</td><td>${module.side_to_floor}</td><td>${module.bottom_rail_mode}</td><td>${module.top_mode}</td><td>${module.front_type}</td><td>${module.front_count}</td>
+                        <td>${index + 1}</td><td>${module.width}</td><td>${cabinetTypeLabels[module.cabinet_type] || module.cabinet_type}</td><td>${positionLabels[module.position] || module.position}</td><td>${contentLabels[module.content] || module.content}</td>
                         <td><button class="btn-danger" type="button" data-index="${index}">Usuń</button></td>
                     `;
                     row.querySelector("button").addEventListener("click", () => {
@@ -731,7 +760,7 @@ def app_status_page() -> HTMLResponse:
                 partsBody.innerHTML = "";
                 for (const part of parts) {
                     const row = document.createElement("tr");
-                    row.innerHTML = `<td>${part.module_id}</td><td>${part.part_type}</td><td>${part.length}</td><td>${part.width}</td><td>${part.thickness}</td>`;
+                    row.innerHTML = `<td>${part.module_id}</td><td>${partTypeLabels[part.part_type] || part.part_type}</td><td>${part.length}</td><td>${part.width}</td><td>${part.thickness}</td>`;
                     partsBody.appendChild(row);
                 }
             }
@@ -741,8 +770,7 @@ def app_status_page() -> HTMLResponse:
                 for (const module of modules) {
                     const row = document.createElement("tr");
                     row.innerHTML = `
-                        <td>${module.module_id}</td><td>${module.module_type}</td><td>${module.width}</td><td>${module.height}</td><td>${module.depth}</td><td>${module.position}</td><td>${module.content}</td>
-                        <td>${module.has_legs ? "Tak" : "Nie"}</td><td>${module.side_to_floor}</td><td>${module.bottom_rail_mode}</td><td>${module.top_mode}</td><td>${module.front_type}</td><td>${module.front_count}</td>
+                        <td>${module.module_id}</td><td>${module.width}</td><td>${cabinetTypeLabels[module.module_type === "base_cabinet" ? "base" : "tall"]}</td><td>${positionLabels[module.position] || module.position}</td><td>${contentLabels[module.content] || module.content}</td>
                     `;
                     modulesBody.appendChild(row);
                 }
@@ -776,7 +804,7 @@ def app_status_page() -> HTMLResponse:
                 }
                 const frontCount = Number(document.getElementById("manual_front_count").value);
                 if (!Number.isInteger(frontCount) || frontCount < 0) {
-                    errorBox.textContent = "front_count musi być liczbą całkowitą >= 0";
+                    errorBox.textContent = "Ilość frontów musi być liczbą całkowitą >= 0";
                     return;
                 }
 
@@ -811,15 +839,6 @@ def app_status_page() -> HTMLResponse:
             projectWidthInput.addEventListener("input", updateManualSummary);
             manualSideToFloor.addEventListener("change", updateFloorHint);
             backTypeSelect.addEventListener("change", updateBackTypeDescription);
-            document.getElementById("clear-btn").addEventListener("click", () => {
-                form.reset();
-                manualModules.length = 0;
-                renderManualModules();
-                updateManualSummary();
-                clearResult();
-                updateFloorHint();
-                updateBackTypeDescription();
-            });
             updateManualSummary();
             updateFloorHint();
             updateBackTypeDescription();
