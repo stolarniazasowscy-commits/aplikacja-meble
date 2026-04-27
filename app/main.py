@@ -223,6 +223,32 @@ def _append_part(
     )
 
 
+def _resolve_back_part_dimensions(
+    module: ModuleResponse,
+    board_thickness: int,
+    back_thickness: int,
+    back_type: BackType,
+    back_groove_insert: int,
+) -> tuple[int, int, int]:
+    resolved_back_thickness = back_thickness
+
+    if back_type == "overlay":
+        back_width = module.width - 6
+        back_length = module.height - 6
+    elif back_type == "groove":
+        resolved_back_thickness = 3
+        back_width = module.width - (2 * board_thickness) + (2 * back_groove_insert)
+        back_length = module.height - 6
+    else:
+        back_width = module.width - (2 * board_thickness)
+        back_length = module.height
+
+    if back_width <= 0 or back_length <= 0:
+        raise HTTPException(status_code=400, detail="Invalid back dimensions after clearances")
+
+    return back_length, back_width, resolved_back_thickness
+
+
 def generate_base_parts(
     module: ModuleResponse,
     board_thickness: int,
@@ -331,16 +357,21 @@ def generate_base_parts(
             thickness=board_thickness,
         )
 
-    if back_type == "between" and (module.width - (2 * board_thickness)) <= 0:
-        raise HTTPException(status_code=400, detail="Invalid back width between sides")
-
-    back_width = module.width if back_type != "between" else module.width - (2 * board_thickness)
-    if back_type == "groove":
-        back_width = module.width - (2 * board_thickness) + (2 * back_groove_insert)
-        if back_width <= 0:
-            raise HTTPException(status_code=400, detail="Invalid groove back width")
-
-    _append_part(parts, module.module_id, "back", length=module.height, width=back_width, thickness=back_thickness)
+    back_length, back_width, resolved_back_thickness = _resolve_back_part_dimensions(
+        module=module,
+        board_thickness=board_thickness,
+        back_thickness=back_thickness,
+        back_type=back_type,
+        back_groove_insert=back_groove_insert,
+    )
+    _append_part(
+        parts,
+        module.module_id,
+        "back",
+        length=back_length,
+        width=back_width,
+        thickness=resolved_back_thickness,
+    )
 
     if module.front_type == "doors":
         front_count = module.front_count if module.front_count > 0 else 1
@@ -403,13 +434,14 @@ def generate_parts_for_module(module: ModuleResponse) -> list[PartResponse]:
     _append_part(parts, module.module_id, "side_right", module.height, module.depth, module.board_thickness)
     _append_part(parts, module.module_id, "bottom", module.width, module.depth, module.board_thickness)
     _append_part(parts, module.module_id, "top", module.width, module.depth, module.board_thickness)
-    if module.back_type == "groove":
-        groove_back_width = module.width - (2 * module.board_thickness) + (2 * module.back_groove_insert)
-        if groove_back_width <= 0:
-            raise HTTPException(status_code=400, detail="Invalid groove back width")
-        _append_part(parts, module.module_id, "back", module.height, groove_back_width, module.back_thickness)
-    else:
-        _append_part(parts, module.module_id, "back", module.height, module.width, module.back_thickness)
+    back_length, back_width, resolved_back_thickness = _resolve_back_part_dimensions(
+        module=module,
+        board_thickness=module.board_thickness,
+        back_thickness=module.back_thickness,
+        back_type=module.back_type,
+        back_groove_insert=module.back_groove_insert,
+    )
+    _append_part(parts, module.module_id, "back", back_length, back_width, resolved_back_thickness)
     return parts
 
 
@@ -791,9 +823,9 @@ def app_status_page() -> HTMLResponse:
 
             function updateBackTypeDescription() {
                 const descriptions = {
-                    overlay: "Plecy nakładane – korpus zostanie pomniejszony o grubość pleców, żeby całkowita głębokość nie wzrosła.",
-                    groove: "Plecy wpuszczane w kanalik wymuszają grubość 3 mm. Boki zostają pełnej głębokości, a wieńce są cofnięte o grubość pleców + cofnięcie kanalika.",
-                    between: "Plecy między bokami – plecy są liczone między bokami, bez zwiększania głębokości."
+                    overlay: "Plecy nakładane – wymiar pleców pomniejszony o 6 mm z szerokości i 6 mm z wysokości.",
+                    groove: "Plecy wpuszczane w kanalik – grubość wymuszona 3 mm, szerokość według wpuszczenia w kanalik, wysokość pomniejszona o 6 mm.",
+                    between: "Plecy między bokami – liczone między bokami."
                 };
                 backTypeDescription.textContent = descriptions[backTypeSelect.value] || "";
                 if (backTypeSelect.value === "groove") {
