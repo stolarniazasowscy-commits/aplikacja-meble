@@ -40,6 +40,7 @@ class ManualProjectRequest(BaseModel):
     back_thickness: int = Field(default=3, gt=0)
     back_type: BackType = "overlay"
     back_groove_offset: int = Field(default=10, ge=0)
+    back_groove_insert: int = Field(default=10, ge=0)
     manual_modules: list[ManualModuleInput] | None = None
 
 
@@ -79,6 +80,7 @@ class ProjectResponse(BaseModel):
     back_thickness: int = Field(gt=0)
     back_type: BackType
     back_groove_offset: int = Field(ge=0)
+    back_groove_insert: int = Field(ge=0)
     module_source: ModuleSource
     warnings: list[str]
     modules: list[ModuleResponse]
@@ -195,6 +197,7 @@ def generate_base_parts(
     back_thickness: int,
     back_type: BackType,
     back_groove_offset: int,
+    back_groove_insert: int,
     base_height: int,
     leg_height: int,
     warnings: list[str],
@@ -210,18 +213,11 @@ def generate_base_parts(
 
     if back_type == "groove":
         side_depth = module.depth
-        if back_thickness == 3:
-            rail_depth = module.depth - back_thickness - back_groove_offset
-            if rail_depth <= 0:
-                raise HTTPException(status_code=400, detail="Invalid rail depth after back groove offset")
-            bottom_depth = rail_depth
-            top_depth = rail_depth
-        else:
-            warning = "Groove back is fully supported only for 3 mm back thickness in MVP"
-            if warning not in warnings:
-                warnings.append(warning)
-            bottom_depth = module.depth
-            top_depth = module.depth
+        rail_depth = module.depth - back_thickness - back_groove_offset
+        if rail_depth <= 0:
+            raise HTTPException(status_code=400, detail="Invalid rail depth after back groove offset")
+        bottom_depth = rail_depth
+        top_depth = rail_depth
     elif back_type == "between":
         side_depth = module.depth
         bottom_depth = module.depth
@@ -307,14 +303,13 @@ def generate_base_parts(
     if back_type == "between" and (module.width - (2 * board_thickness)) <= 0:
         raise HTTPException(status_code=400, detail="Invalid back width between sides")
 
-    _append_part(
-        parts,
-        module.module_id,
-        "back",
-        length=module.height,
-        width=module.width if back_type != "between" else module.width - (2 * board_thickness),
-        thickness=back_thickness,
-    )
+    back_width = module.width if back_type != "between" else module.width - (2 * board_thickness)
+    if back_type == "groove":
+        back_width = module.width - (2 * board_thickness) + (2 * back_groove_insert)
+        if back_width <= 0:
+            raise HTTPException(status_code=400, detail="Invalid groove back width")
+
+    _append_part(parts, module.module_id, "back", length=module.height, width=back_width, thickness=back_thickness)
 
     if module.front_type == "doors":
         front_count = module.front_count if module.front_count > 0 else 1
@@ -504,6 +499,8 @@ def app_status_page() -> HTMLResponse:
                         <label>Wpuszczenie pleców w kanalik [mm]<input id="back_groove_insert" name="back_groove_insert" type="number" min="0" value="3" required /></label>
                         <label>Wysokość szafki dolnej [mm]<input id="base_height" name="base_height" type="number" min="1" value="720" required /></label>
                         <label>Wysokość nóg [mm]<input id="leg_height" name="leg_height" type="number" min="0" value="100" required /></label>
+                        <label>back_groove_offset<input id="back_groove_offset" name="back_groove_offset" type="number" min="0" value="10" required /></label>
+                        <label>back_groove_insert<input id="back_groove_insert" name="back_groove_insert" type="number" min="0" value="10" required /></label>
                     </div>
                     <div id="back-type-description" class="hint" style="display:block;background:#eef2ff;border-color:#a5b4fc;color:#3730a3;"></div>
                     <div class="button-row">
@@ -651,6 +648,7 @@ def app_status_page() -> HTMLResponse:
             const sideFloorHint = document.getElementById("side-floor-hint");
             const backTypeSelect = document.getElementById("back_type");
             const backTypeDescription = document.getElementById("back-type-description");
+            const backThicknessInput = document.getElementById("back_thickness");
             const manualModules = [];
             const cabinetTypeLabels = { base: "Szafka dolna", tall: "Szafka wysoka" };
             const positionLabels = {
@@ -689,19 +687,26 @@ def app_status_page() -> HTMLResponse:
                     base_height: Number(document.getElementById("base_height").value),
                     leg_height: Number(document.getElementById("leg_height").value),
                     board_thickness: Number(document.getElementById("board_thickness").value),
-                    back_thickness: Number(document.getElementById("back_thickness").value),
+                    back_thickness: Number(backThicknessInput.value),
                     back_type: backTypeSelect.value,
-                    back_groove_offset: Number(document.getElementById("back_groove_offset").value)
+                    back_groove_offset: Number(document.getElementById("back_groove_offset").value),
+                    back_groove_insert: Number(document.getElementById("back_groove_insert").value)
                 };
             }
 
             function updateBackTypeDescription() {
                 const descriptions = {
                     overlay: "Plecy nakładane – korpus zostanie pomniejszony o grubość pleców, żeby całkowita głębokość nie wzrosła.",
-                    groove: "Plecy wpuszczane w kanalik – boki zostają pełnej głębokości. Dla pleców 3 mm wieńce są cofnięte o grubość pleców + cofnięcie kanalika.",
+                    groove: "Plecy wpuszczane w kanalik wymuszają grubość 3 mm. Boki zostają pełnej głębokości, a wieńce są cofnięte o grubość pleców + cofnięcie kanalika.",
                     between: "Plecy między bokami – plecy są liczone między bokami, bez zwiększania głębokości."
                 };
                 backTypeDescription.textContent = descriptions[backTypeSelect.value] || "";
+                if (backTypeSelect.value === "groove") {
+                    backThicknessInput.value = "3";
+                    backThicknessInput.disabled = true;
+                } else {
+                    backThicknessInput.disabled = false;
+                }
             }
 
             function updateFloorHint() {
@@ -895,6 +900,11 @@ def view_modules() -> HTMLResponse:
 @app.post("/projects/from-manual", response_model=ManualProjectResponse)
 def create_project_from_manual(payload: ManualProjectRequest) -> ManualProjectResponse:
     warnings: list[str] = []
+    effective_back_thickness = payload.back_thickness
+    if payload.back_type == "groove" and payload.back_thickness != 3:
+        effective_back_thickness = 3
+        warnings.append("Back thickness forced to 3 mm for groove back type")
+
     if payload.manual_modules is None:
         module_source: ModuleSource = "auto"
         modules = generate_modules(payload.width, payload.height, payload.depth)
@@ -932,9 +942,10 @@ def create_project_from_manual(payload: ManualProjectRequest) -> ManualProjectRe
                     generate_base_parts(
                         module=response_module,
                         board_thickness=payload.board_thickness,
-                        back_thickness=payload.back_thickness,
+                        back_thickness=effective_back_thickness,
                         back_type=payload.back_type,
                         back_groove_offset=payload.back_groove_offset,
+                        back_groove_insert=payload.back_groove_insert,
                         base_height=payload.base_height,
                         leg_height=payload.leg_height,
                         warnings=warnings,
@@ -973,7 +984,27 @@ def create_project_from_manual(payload: ManualProjectRequest) -> ManualProjectRe
                     response_module.depth,
                     payload.board_thickness,
                 )
-                _append_part(parts, response_module.module_id, "back", response_module.height, response_module.width, payload.back_thickness)
+                if payload.back_type == "groove":
+                    groove_back_width = response_module.width - (2 * payload.board_thickness) + (2 * payload.back_groove_insert)
+                    if groove_back_width <= 0:
+                        raise HTTPException(status_code=400, detail="Invalid groove back width")
+                    _append_part(
+                        parts,
+                        response_module.module_id,
+                        "back",
+                        response_module.height,
+                        groove_back_width,
+                        effective_back_thickness,
+                    )
+                else:
+                    _append_part(
+                        parts,
+                        response_module.module_id,
+                        "back",
+                        response_module.height,
+                        response_module.width,
+                        effective_back_thickness,
+                    )
 
     project = ProjectResponse(
         project_name=payload.project_name,
@@ -983,9 +1014,10 @@ def create_project_from_manual(payload: ManualProjectRequest) -> ManualProjectRe
         base_height=payload.base_height,
         leg_height=payload.leg_height,
         board_thickness=payload.board_thickness,
-        back_thickness=payload.back_thickness,
+        back_thickness=effective_back_thickness,
         back_type=payload.back_type,
         back_groove_offset=payload.back_groove_offset,
+        back_groove_insert=payload.back_groove_insert,
         module_source=module_source,
         warnings=warnings,
         modules=modules,
