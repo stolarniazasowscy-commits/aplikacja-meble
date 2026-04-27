@@ -27,6 +27,13 @@ class ManualModuleInput(BaseModel):
     top_mode: Literal["full_top_on_sides", "full_top_between_sides", "traverses"] = "full_top_on_sides"
     front_type: Literal["none", "doors", "drawers"] = "none"
     front_count: int = Field(default=0, ge=0)
+    base_height: int = Field(default=820, gt=0)
+    leg_height: int = Field(default=100, ge=0)
+    board_thickness: int = Field(default=18, gt=0)
+    back_thickness: int = Field(default=3, gt=0)
+    back_type: BackType = "overlay"
+    back_groove_offset: int = Field(default=10, ge=0)
+    back_groove_insert: int = Field(default=10, ge=0)
 
 
 class ManualProjectRequest(BaseModel):
@@ -59,6 +66,13 @@ class ModuleResponse(BaseModel):
     top_mode: Literal["full_top_on_sides", "full_top_between_sides", "traverses"] = "full_top_on_sides"
     front_type: Literal["none", "doors", "drawers"] = "none"
     front_count: int = Field(default=0, ge=0)
+    base_height: int = Field(gt=0)
+    leg_height: int = Field(ge=0)
+    board_thickness: int = Field(gt=0)
+    back_thickness: int = Field(gt=0)
+    back_type: BackType
+    back_groove_offset: int = Field(ge=0)
+    back_groove_insert: int = Field(ge=0)
 
 
 class PartResponse(BaseModel):
@@ -119,7 +133,18 @@ def _normalize_module_config(module: ManualModuleInput) -> tuple[bool, SideToFlo
     return has_legs, side_to_floor, bottom_rail_mode, module.base_construction
 
 
-def generate_modules(width: int, height: int, depth: int) -> list[ModuleResponse]:
+def generate_modules(
+    width: int,
+    height: int,
+    depth: int,
+    base_height: int,
+    leg_height: int,
+    board_thickness: int,
+    back_thickness: int,
+    back_type: BackType,
+    back_groove_offset: int,
+    back_groove_insert: int,
+) -> list[ModuleResponse]:
     max_module_width = 600
     module_count = (width + max_module_width - 1) // max_module_width
 
@@ -145,6 +170,13 @@ def generate_modules(width: int, height: int, depth: int) -> list[ModuleResponse
                 top_mode="full_top_on_sides",
                 front_type="none",
                 front_count=0,
+                base_height=base_height,
+                leg_height=leg_height,
+                board_thickness=board_thickness,
+                back_thickness=back_thickness,
+                back_type=back_type,
+                back_groove_offset=back_groove_offset,
+                back_groove_insert=back_groove_insert,
             )
         )
 
@@ -200,7 +232,6 @@ def generate_base_parts(
     back_groove_insert: int,
     base_height: int,
     leg_height: int,
-    warnings: list[str],
 ) -> list[PartResponse]:
     parts: list[PartResponse] = []
     effective_depth = module.depth - back_thickness if back_type == "overlay" else module.depth
@@ -334,6 +365,51 @@ def generate_base_parts(
                 thickness=board_thickness,
             )
 
+    return parts
+
+
+def _effective_module_technology(module: ManualModuleInput, module_id: str, warnings: list[str]) -> dict[str, int | str]:
+    effective_back_thickness = module.back_thickness
+    if module.back_type == "groove" and module.back_thickness != 3:
+        effective_back_thickness = 3
+        warnings.append(f"Back thickness forced to 3 mm for groove back type in module {module_id}")
+
+    return {
+        "base_height": module.base_height,
+        "leg_height": module.leg_height,
+        "board_thickness": module.board_thickness,
+        "back_thickness": effective_back_thickness,
+        "back_type": module.back_type,
+        "back_groove_offset": module.back_groove_offset,
+        "back_groove_insert": module.back_groove_insert,
+    }
+
+
+def generate_parts_for_module(module: ModuleResponse) -> list[PartResponse]:
+    if module.module_type == "base_cabinet":
+        return generate_base_parts(
+            module=module,
+            board_thickness=module.board_thickness,
+            back_thickness=module.back_thickness,
+            back_type=module.back_type,
+            back_groove_offset=module.back_groove_offset,
+            back_groove_insert=module.back_groove_insert,
+            base_height=module.base_height,
+            leg_height=module.leg_height,
+        )
+
+    parts: list[PartResponse] = []
+    _append_part(parts, module.module_id, "side_left", module.height, module.depth, module.board_thickness)
+    _append_part(parts, module.module_id, "side_right", module.height, module.depth, module.board_thickness)
+    _append_part(parts, module.module_id, "bottom", module.width, module.depth, module.board_thickness)
+    _append_part(parts, module.module_id, "top", module.width, module.depth, module.board_thickness)
+    if module.back_type == "groove":
+        groove_back_width = module.width - (2 * module.board_thickness) + (2 * module.back_groove_insert)
+        if groove_back_width <= 0:
+            raise HTTPException(status_code=400, detail="Invalid groove back width")
+        _append_part(parts, module.module_id, "back", module.height, groove_back_width, module.back_thickness)
+    else:
+        _append_part(parts, module.module_id, "back", module.height, module.width, module.back_thickness)
     return parts
 
 
@@ -496,11 +572,9 @@ def app_status_page() -> HTMLResponse:
                             </select>
                         </label>
                         <label>Cofnięcie kanalika od tyłu [mm]<input id="back_groove_offset" name="back_groove_offset" type="number" min="0" value="10" required /></label>
-                        <label>Wpuszczenie pleców w kanalik [mm]<input id="back_groove_insert" name="back_groove_insert" type="number" min="0" value="3" required /></label>
+                        <label>Wpuszczenie pleców w kanalik [mm]<input id="back_groove_insert" name="back_groove_insert" type="number" min="0" value="10" required /></label>
                         <label>Wysokość szafki dolnej [mm]<input id="base_height" name="base_height" type="number" min="1" value="720" required /></label>
                         <label>Wysokość nóg [mm]<input id="leg_height" name="leg_height" type="number" min="0" value="100" required /></label>
-                        <label>Cofnięcie kanałka od tyłu [mm]<input id="back_groove_offset" name="back_groove_offset" type="number" min="0" value="10" required /></label>
-                        <label>Wpuszczenie pleców w kanałek [mm]<input id="back_groove_insert" name="back_groove_insert" type="number" min="0" value="10" required /></label>
                     </div>
                     <div id="back-type-description" class="hint" style="display:block;background:#eef2ff;border-color:#a5b4fc;color:#3730a3;"></div>
                     <div class="button-row">
@@ -571,6 +645,19 @@ def app_status_page() -> HTMLResponse:
                         </select>
                     </label>
                     <label>Ilość frontów<input id="manual_front_count" type="number" min="0" value="0" /></label>
+                    <label>Wysokość szafki dolnej [mm]<input id="manual_base_height" type="number" min="1" value="820" /></label>
+                    <label>Wysokość nóg [mm]<input id="manual_leg_height" type="number" min="0" value="100" /></label>
+                    <label>Grubość płyty [mm]<input id="manual_board_thickness" type="number" min="1" value="18" /></label>
+                    <label>Grubość pleców [mm]<input id="manual_back_thickness" type="number" min="1" value="3" /></label>
+                    <label>Rodzaj pleców
+                        <select id="manual_back_type">
+                            <option value="overlay">Nakładane</option>
+                            <option value="groove">Wpuszczane w kanalik</option>
+                            <option value="between">Między bokami</option>
+                        </select>
+                    </label>
+                    <label>Cofnięcie kanalika od tyłu [mm]<input id="manual_back_groove_offset" type="number" min="0" value="10" /></label>
+                    <label>Wpuszczenie pleców w kanalik [mm]<input id="manual_back_groove_insert" type="number" min="0" value="10" /></label>
                 </div>
                 <div id="side-floor-hint" class="hint">Wieniec dolny jest wymuszony między bokami tylko wtedy, gdy oba boki schodzą do podłogi.</div>
                 <div class="button-row">
@@ -585,7 +672,7 @@ def app_status_page() -> HTMLResponse:
                     <table>
                         <thead>
                             <tr>
-                                <th>Nr</th><th>Szerokość</th><th>Typ</th><th>Pozycja</th><th>Zawartość</th><th>Usuń</th>
+                                <th>Nr</th><th>Szerokość</th><th>Typ szafki</th><th>Pozycja</th><th>Zawartość</th><th>Nogi</th><th>Bok do podłogi</th><th>Wieniec dolny</th><th>Wieniec górny</th><th>Front</th><th>Liczba frontów</th><th>Wysokość szafki dolnej</th><th>Wysokość nóg</th><th>Grubość płyty</th><th>Grubość pleców</th><th>Rodzaj pleców</th><th>Cofnięcie kanalika</th><th>Wpuszczenie pleców</th><th>Akcja</th>
                             </tr>
                         </thead>
                         <tbody id="manual-modules-body"></tbody>
@@ -611,7 +698,7 @@ def app_status_page() -> HTMLResponse:
                     <table>
                         <thead>
                             <tr>
-                                <th>Nr</th><th>Szerokość</th><th>Typ</th><th>Pozycja</th><th>Zawartość</th>
+                                <th>Nr</th><th>Szerokość</th><th>Typ</th><th>Pozycja</th><th>Zawartość</th><th>base_height</th><th>leg_height</th><th>board_thickness</th><th>back_thickness</th><th>back_type</th><th>back_groove_offset</th><th>back_groove_insert</th>
                             </tr>
                         </thead>
                         <tbody id="modules-body"></tbody>
@@ -649,6 +736,8 @@ def app_status_page() -> HTMLResponse:
             const backTypeSelect = document.getElementById("back_type");
             const backTypeDescription = document.getElementById("back-type-description");
             const backThicknessInput = document.getElementById("back_thickness");
+            const manualBackTypeSelect = document.getElementById("manual_back_type");
+            const manualBackThicknessInput = document.getElementById("manual_back_thickness");
             const manualModules = [];
             const cabinetTypeLabels = { base: "Szafka dolna", tall: "Szafka wysoka" };
             const positionLabels = {
@@ -659,6 +748,11 @@ def app_status_page() -> HTMLResponse:
                 corner_right: "Narożna prawa"
             };
             const contentLabels = { shelves: "Półki", drawers: "Szuflady", empty: "Pusta" };
+            const sideToFloorLabels = { none: "Brak", left: "Lewy", right: "Prawy", both: "Oba" };
+            const bottomRailLabels = { sides_on_bottom: "Boki stoją na wieńcu", bottom_between_sides: "Wieniec między bokami" };
+            const topModeLabels = { full_top_on_sides: "Na bokach", full_top_between_sides: "Między bokami", traverses: "Trawersy" };
+            const frontTypeLabels = { none: "Brak", doors: "Drzwiczki", drawers: "Szuflady" };
+            const backTypeLabels = { overlay: "Nakładane", groove: "Wpuszczane w kanalik", between: "Między bokami" };
             const partTypeLabels = {
                 side_left: "Bok lewy",
                 side_right: "Bok prawy",
@@ -684,6 +778,7 @@ def app_status_page() -> HTMLResponse:
                     width: Number(document.getElementById("width").value),
                     height: Number(document.getElementById("height").value),
                     depth: Number(document.getElementById("depth").value),
+                    layout_shape: document.getElementById("layout_shape").value,
                     base_height: Number(document.getElementById("base_height").value),
                     leg_height: Number(document.getElementById("leg_height").value),
                     board_thickness: Number(document.getElementById("board_thickness").value),
@@ -706,6 +801,15 @@ def app_status_page() -> HTMLResponse:
                     backThicknessInput.disabled = true;
                 } else {
                     backThicknessInput.disabled = false;
+                }
+            }
+
+            function updateManualBackTypeState() {
+                if (manualBackTypeSelect.value === "groove") {
+                    manualBackThicknessInput.value = "3";
+                    manualBackThicknessInput.disabled = true;
+                } else {
+                    manualBackThicknessInput.disabled = false;
                 }
             }
 
@@ -744,7 +848,7 @@ def app_status_page() -> HTMLResponse:
                 manualModules.forEach((module, index) => {
                     const row = document.createElement("tr");
                     row.innerHTML = `
-                        <td>${index + 1}</td><td>${module.width}</td><td>${cabinetTypeLabels[module.cabinet_type] || module.cabinet_type}</td><td>${positionLabels[module.position] || module.position}</td><td>${contentLabels[module.content] || module.content}</td>
+                        <td>${index + 1}</td><td>${module.width}</td><td>${cabinetTypeLabels[module.cabinet_type] || module.cabinet_type}</td><td>${positionLabels[module.position] || module.position}</td><td>${contentLabels[module.content] || module.content}</td><td>${module.has_legs ? "Tak" : "Nie"}</td><td>${sideToFloorLabels[module.side_to_floor] || module.side_to_floor}</td><td>${bottomRailLabels[module.bottom_rail_mode] || module.bottom_rail_mode}</td><td>${topModeLabels[module.top_mode] || module.top_mode}</td><td>${frontTypeLabels[module.front_type] || module.front_type}</td><td>${module.front_count}</td><td>${module.base_height}</td><td>${module.leg_height}</td><td>${module.board_thickness}</td><td>${module.back_thickness}</td><td>${backTypeLabels[module.back_type] || module.back_type}</td><td>${module.back_groove_offset}</td><td>${module.back_groove_insert}</td>
                         <td><button class="btn-danger" type="button" data-index="${index}">Usuń</button></td>
                     `;
                     row.querySelector("button").addEventListener("click", () => {
@@ -770,7 +874,7 @@ def app_status_page() -> HTMLResponse:
                 for (const module of modules) {
                     const row = document.createElement("tr");
                     row.innerHTML = `
-                        <td>${module.module_id}</td><td>${module.width}</td><td>${cabinetTypeLabels[module.module_type === "base_cabinet" ? "base" : "tall"]}</td><td>${positionLabels[module.position] || module.position}</td><td>${contentLabels[module.content] || module.content}</td>
+                        <td>${module.module_id}</td><td>${module.width}</td><td>${cabinetTypeLabels[module.module_type === "base_cabinet" ? "base" : "tall"]}</td><td>${positionLabels[module.position] || module.position}</td><td>${contentLabels[module.content] || module.content}</td><td>${module.base_height}</td><td>${module.leg_height}</td><td>${module.board_thickness}</td><td>${module.back_thickness}</td><td>${module.back_type}</td><td>${module.back_groove_offset}</td><td>${module.back_groove_insert}</td>
                     `;
                     modulesBody.appendChild(row);
                 }
@@ -779,8 +883,16 @@ def app_status_page() -> HTMLResponse:
             async function sendProject(useManualModules) {
                 clearResult();
                 try {
-                    const payload = basePayload();
-                    if (useManualModules) payload.manual_modules = manualModules;
+                    const payload = useManualModules
+                        ? {
+                            project_name: document.getElementById("project_name").value,
+                            width: Number(document.getElementById("width").value),
+                            height: Number(document.getElementById("height").value),
+                            depth: Number(document.getElementById("depth").value),
+                            layout_shape: document.getElementById("layout_shape").value,
+                            manual_modules: manualModules
+                        }
+                        : basePayload();
                     const response = await fetch("/projects/from-manual", {
                         method: "POST",
                         headers: {"Content-Type": "application/json"},
@@ -807,6 +919,36 @@ def app_status_page() -> HTMLResponse:
                     errorBox.textContent = "Ilość frontów musi być liczbą całkowitą >= 0";
                     return;
                 }
+                const baseHeight = Number(document.getElementById("manual_base_height").value);
+                const legHeight = Number(document.getElementById("manual_leg_height").value);
+                const boardThickness = Number(document.getElementById("manual_board_thickness").value);
+                const backThickness = Number(manualBackThicknessInput.value);
+                const backGrooveOffset = Number(document.getElementById("manual_back_groove_offset").value);
+                const backGrooveInsert = Number(document.getElementById("manual_back_groove_insert").value);
+                if (!Number.isInteger(baseHeight) || baseHeight <= 0) {
+                    errorBox.textContent = "Wysokość szafki dolnej musi być liczbą całkowitą > 0";
+                    return;
+                }
+                if (!Number.isInteger(legHeight) || legHeight < 0) {
+                    errorBox.textContent = "Wysokość nóg musi być liczbą całkowitą >= 0";
+                    return;
+                }
+                if (!Number.isInteger(boardThickness) || boardThickness <= 0) {
+                    errorBox.textContent = "Grubość płyty musi być liczbą całkowitą > 0";
+                    return;
+                }
+                if (!Number.isInteger(backThickness) || backThickness <= 0) {
+                    errorBox.textContent = "Grubość pleców musi być liczbą całkowitą > 0";
+                    return;
+                }
+                if (!Number.isInteger(backGrooveOffset) || backGrooveOffset < 0) {
+                    errorBox.textContent = "Cofnięcie kanalika musi być liczbą całkowitą >= 0";
+                    return;
+                }
+                if (!Number.isInteger(backGrooveInsert) || backGrooveInsert < 0) {
+                    errorBox.textContent = "Wpuszczenie pleców musi być liczbą całkowitą >= 0";
+                    return;
+                }
 
                 const sideToFloor = manualSideToFloor.value;
                 const bottomRailMode = sideToFloor === "both" ? "bottom_between_sides" : manualBottomRailMode.value;
@@ -822,7 +964,14 @@ def app_status_page() -> HTMLResponse:
                     bottom_rail_mode: bottomRailMode,
                     top_mode: document.getElementById("manual_top_mode").value,
                     front_type: document.getElementById("manual_front_type").value,
-                    front_count: frontCount
+                    front_count: frontCount,
+                    base_height: baseHeight,
+                    leg_height: legHeight,
+                    board_thickness: boardThickness,
+                    back_thickness: backThickness,
+                    back_type: manualBackTypeSelect.value,
+                    back_groove_offset: backGrooveOffset,
+                    back_groove_insert: backGrooveInsert
                 });
                 renderManualModules();
                 updateManualSummary();
@@ -839,9 +988,11 @@ def app_status_page() -> HTMLResponse:
             projectWidthInput.addEventListener("input", updateManualSummary);
             manualSideToFloor.addEventListener("change", updateFloorHint);
             backTypeSelect.addEventListener("change", updateBackTypeDescription);
+            manualBackTypeSelect.addEventListener("change", updateManualBackTypeState);
             updateManualSummary();
             updateFloorHint();
             updateBackTypeDescription();
+            updateManualBackTypeState();
         </script>
     </body>
     </html>
@@ -907,7 +1058,18 @@ def create_project_from_manual(payload: ManualProjectRequest) -> ManualProjectRe
 
     if payload.manual_modules is None:
         module_source: ModuleSource = "auto"
-        modules = generate_modules(payload.width, payload.height, payload.depth)
+        modules = generate_modules(
+            payload.width,
+            payload.height,
+            payload.depth,
+            payload.base_height,
+            payload.leg_height,
+            payload.board_thickness,
+            effective_back_thickness,
+            payload.back_type,
+            payload.back_groove_offset,
+            payload.back_groove_insert,
+        )
         parts: list[PartResponse] = []
     else:
         if sum(module.width for module in payload.manual_modules) != payload.width:
@@ -917,11 +1079,13 @@ def create_project_from_manual(payload: ManualProjectRequest) -> ManualProjectRe
         modules = []
         parts = []
         for idx, module in enumerate(payload.manual_modules, start=1):
+            module_id = f"M{idx}"
+            effective_tech = _effective_module_technology(module, module_id, warnings)
             has_legs, side_to_floor, bottom_rail_mode, legacy_base_construction = _normalize_module_config(module)
             module_type = "base_cabinet" if module.cabinet_type == "base" else "tall_cabinet"
-            module_height = payload.base_height if module.cabinet_type == "base" else payload.height
+            module_height = int(effective_tech["base_height"]) if module.cabinet_type == "base" else payload.height
             response_module = ModuleResponse(
-                module_id=f"M{idx}",
+                module_id=module_id,
                 module_type=module_type,
                 width=module.width,
                 height=module_height,
@@ -935,76 +1099,16 @@ def create_project_from_manual(payload: ManualProjectRequest) -> ManualProjectRe
                 top_mode=module.top_mode,
                 front_type=module.front_type,
                 front_count=module.front_count,
+                base_height=int(effective_tech["base_height"]),
+                leg_height=int(effective_tech["leg_height"]),
+                board_thickness=int(effective_tech["board_thickness"]),
+                back_thickness=int(effective_tech["back_thickness"]),
+                back_type=effective_tech["back_type"],
+                back_groove_offset=int(effective_tech["back_groove_offset"]),
+                back_groove_insert=int(effective_tech["back_groove_insert"]),
             )
             modules.append(response_module)
-            if module.cabinet_type == "base":
-                parts.extend(
-                    generate_base_parts(
-                        module=response_module,
-                        board_thickness=payload.board_thickness,
-                        back_thickness=effective_back_thickness,
-                        back_type=payload.back_type,
-                        back_groove_offset=payload.back_groove_offset,
-                        back_groove_insert=payload.back_groove_insert,
-                        base_height=payload.base_height,
-                        leg_height=payload.leg_height,
-                        warnings=warnings,
-                    )
-                )
-            else:
-                _append_part(
-                    parts,
-                    response_module.module_id,
-                    "side_left",
-                    response_module.height,
-                    response_module.depth,
-                    payload.board_thickness,
-                )
-                _append_part(
-                    parts,
-                    response_module.module_id,
-                    "side_right",
-                    response_module.height,
-                    response_module.depth,
-                    payload.board_thickness,
-                )
-                _append_part(
-                    parts,
-                    response_module.module_id,
-                    "bottom",
-                    response_module.width,
-                    response_module.depth,
-                    payload.board_thickness,
-                )
-                _append_part(
-                    parts,
-                    response_module.module_id,
-                    "top",
-                    response_module.width,
-                    response_module.depth,
-                    payload.board_thickness,
-                )
-                if payload.back_type == "groove":
-                    groove_back_width = response_module.width - (2 * payload.board_thickness) + (2 * payload.back_groove_insert)
-                    if groove_back_width <= 0:
-                        raise HTTPException(status_code=400, detail="Invalid groove back width")
-                    _append_part(
-                        parts,
-                        response_module.module_id,
-                        "back",
-                        response_module.height,
-                        groove_back_width,
-                        effective_back_thickness,
-                    )
-                else:
-                    _append_part(
-                        parts,
-                        response_module.module_id,
-                        "back",
-                        response_module.height,
-                        response_module.width,
-                        effective_back_thickness,
-                    )
+            parts.extend(generate_parts_for_module(response_module))
 
     project = ProjectResponse(
         project_name=payload.project_name,
