@@ -105,7 +105,7 @@ def _normalize_module_config(module: ManualModuleInput) -> tuple[bool, SideToFlo
             side_to_floor = legacy_side_to_floor
 
     bottom_rail_mode = module.bottom_rail_mode
-    if side_to_floor != "none":
+    if side_to_floor == "both":
         bottom_rail_mode = "bottom_between_sides"
 
     return has_legs, side_to_floor, bottom_rail_mode, module.base_construction
@@ -193,7 +193,7 @@ def generate_base_parts(
     parts: list[PartResponse] = []
 
     effective_bottom_rail_mode: BottomRailMode = (
-        "bottom_between_sides" if module.side_to_floor != "none" else module.bottom_rail_mode
+        "bottom_between_sides" if module.side_to_floor == "both" else module.bottom_rail_mode
     )
 
     normal_side_height = _base_side_height(module, base_height, leg_height, board_thickness)
@@ -226,10 +226,12 @@ def generate_base_parts(
             thickness=board_thickness,
         )
 
-    if module.side_to_floor != "none":
+    if effective_bottom_rail_mode == "bottom_between_sides":
         bottom_length = module.width - (2 * board_thickness)
-    elif effective_bottom_rail_mode == "sides_on_bottom":
+    elif module.side_to_floor == "none":
         bottom_length = module.width
+    elif module.side_to_floor in {"left", "right"}:
+        bottom_length = module.width - board_thickness
     else:
         bottom_length = module.width - (2 * board_thickness)
 
@@ -514,7 +516,7 @@ def app_status_page() -> HTMLResponse:
                     </label>
                     <label>front_count<input id="manual_front_count" type="number" min="0" value="0" /></label>
                 </div>
-                <div id="side-floor-hint" class="hint">Przy boku do podłogi wieniec dolny jest wymuszony między bokami</div>
+                <div id="side-floor-hint" class="hint">Wieniec dolny jest wymuszony między bokami tylko wtedy, gdy oba boki schodzą do podłogi.</div>
                 <div class="button-row">
                     <button class="btn-primary" type="button" id="add-module-btn">Dodaj moduł</button>
                     <button class="btn-danger" type="button" id="clear-modules-btn">Wyczyść moduły ręczne</button>
@@ -614,10 +616,14 @@ def app_status_page() -> HTMLResponse:
             }
 
             function updateFloorHint() {
-                const hasSideToFloor = manualSideToFloor.value !== "none";
-                sideFloorHint.style.display = hasSideToFloor ? "block" : "none";
-                if (hasSideToFloor) {
+                const sideToFloor = manualSideToFloor.value;
+                const forceBottomBetweenSides = sideToFloor === "both";
+                sideFloorHint.style.display = forceBottomBetweenSides ? "block" : "none";
+                if (forceBottomBetweenSides) {
                     manualBottomRailMode.value = "bottom_between_sides";
+                    manualBottomRailMode.disabled = true;
+                } else {
+                    manualBottomRailMode.disabled = false;
                 }
             }
 
@@ -711,7 +717,7 @@ def app_status_page() -> HTMLResponse:
                 }
 
                 const sideToFloor = manualSideToFloor.value;
-                const bottomRailMode = sideToFloor === "none" ? manualBottomRailMode.value : "bottom_between_sides";
+                const bottomRailMode = sideToFloor === "both" ? "bottom_between_sides" : manualBottomRailMode.value;
 
                 errorBox.textContent = "";
                 manualModules.push({
