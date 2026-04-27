@@ -9,14 +9,20 @@ app = FastAPI()
 ModuleSource = Literal["manual", "auto"]
 MANUAL_WIDTH_SUM_ERROR = "Sum of manual module widths must equal total project width"
 
+LegacyBaseConstruction = Literal["legs", "side_to_floor_left", "side_to_floor_right", "side_to_floor_both"]
+SideToFloor = Literal["none", "left", "right", "both"]
+BottomRailMode = Literal["sides_on_bottom", "bottom_between_sides"]
+
 
 class ManualModuleInput(BaseModel):
     width: int = Field(gt=0)
     cabinet_type: Literal["base", "tall"]
     position: Literal["normal", "end_left", "end_right", "corner_left", "corner_right"]
     content: Literal["shelves", "drawers", "empty"]
-    base_construction: Literal["legs", "side_to_floor_left", "side_to_floor_right", "side_to_floor_both"] = "legs"
-    bottom_rail_mode: Literal["sides_on_bottom", "bottom_between_sides"] = "sides_on_bottom"
+    has_legs: bool = True
+    side_to_floor: SideToFloor = "none"
+    base_construction: LegacyBaseConstruction | None = None
+    bottom_rail_mode: BottomRailMode = "sides_on_bottom"
     top_mode: Literal["full_top_on_sides", "full_top_between_sides", "traverses"] = "full_top_on_sides"
     front_type: Literal["none", "doors", "drawers"] = "none"
     front_count: int = Field(default=0, ge=0)
@@ -42,8 +48,10 @@ class ModuleResponse(BaseModel):
     depth: int = Field(gt=0)
     position: Literal["normal", "end_left", "end_right", "corner_left", "corner_right"]
     content: Literal["shelves", "drawers", "empty"]
-    base_construction: Literal["legs", "side_to_floor_left", "side_to_floor_right", "side_to_floor_both"] = "legs"
-    bottom_rail_mode: Literal["sides_on_bottom", "bottom_between_sides"] = "sides_on_bottom"
+    has_legs: bool = True
+    side_to_floor: SideToFloor = "none"
+    base_construction: LegacyBaseConstruction | None = None
+    bottom_rail_mode: BottomRailMode = "sides_on_bottom"
     top_mode: Literal["full_top_on_sides", "full_top_between_sides", "traverses"] = "full_top_on_sides"
     front_type: Literal["none", "doors", "drawers"] = "none"
     front_count: int = Field(default=0, ge=0)
@@ -52,10 +60,9 @@ class ModuleResponse(BaseModel):
 class PartResponse(BaseModel):
     module_id: str
     part_type: str
-    width: int = Field(gt=0)
-    height: int | None = Field(default=None, gt=0)
-    depth: int | None = Field(default=None, gt=0)
-    thickness: int = Field(gt=0)
+    length: int | float = Field(gt=0)
+    width: int | float = Field(gt=0)
+    thickness: int | float = Field(gt=0)
 
 
 class ProjectResponse(BaseModel):
@@ -77,6 +84,33 @@ class ManualProjectResponse(BaseModel):
     project: ProjectResponse
 
 
+def _map_legacy_base_construction(base_construction: LegacyBaseConstruction | None) -> tuple[bool, SideToFloor]:
+    if base_construction == "side_to_floor_left":
+        return True, "left"
+    if base_construction == "side_to_floor_right":
+        return True, "right"
+    if base_construction == "side_to_floor_both":
+        return True, "both"
+    return True, "none"
+
+
+def _normalize_module_config(module: ManualModuleInput) -> tuple[bool, SideToFloor, BottomRailMode, LegacyBaseConstruction | None]:
+    has_legs = module.has_legs
+    side_to_floor = module.side_to_floor
+
+    if module.base_construction is not None:
+        legacy_has_legs, legacy_side_to_floor = _map_legacy_base_construction(module.base_construction)
+        has_legs = legacy_has_legs if module.has_legs is True else module.has_legs
+        if module.side_to_floor == "none":
+            side_to_floor = legacy_side_to_floor
+
+    bottom_rail_mode = module.bottom_rail_mode
+    if side_to_floor != "none":
+        bottom_rail_mode = "bottom_between_sides"
+
+    return has_legs, side_to_floor, bottom_rail_mode, module.base_construction
+
+
 def generate_modules(width: int, height: int, depth: int) -> list[ModuleResponse]:
     max_module_width = 600
     module_count = (width + max_module_width - 1) // max_module_width
@@ -96,6 +130,8 @@ def generate_modules(width: int, height: int, depth: int) -> list[ModuleResponse
                 depth=depth,
                 position="normal",
                 content="empty",
+                has_legs=True,
+                side_to_floor="none",
                 base_construction="legs",
                 bottom_rail_mode="sides_on_bottom",
                 top_mode="full_top_on_sides",
@@ -107,8 +143,8 @@ def generate_modules(width: int, height: int, depth: int) -> list[ModuleResponse
     return modules
 
 
-def _calculate_non_floor_side_height(module: ModuleResponse, base_height: int, leg_height: int, board_thickness: int) -> int:
-    side_height = base_height - leg_height
+def _base_side_height(module: ModuleResponse, base_height: int, leg_height: int, board_thickness: int) -> int:
+    side_height = base_height - leg_height if module.has_legs else base_height
 
     if module.bottom_rail_mode == "sides_on_bottom":
         side_height -= board_thickness
@@ -116,13 +152,35 @@ def _calculate_non_floor_side_height(module: ModuleResponse, base_height: int, l
     if module.top_mode == "full_top_on_sides":
         side_height -= board_thickness
 
-    if side_height <= 0:
+    return side_height
+
+
+def _validate_part_dimensions(part_type: str, length: int | float, width: int | float) -> None:
+    if length <= 0 or width <= 0:
         raise HTTPException(
             status_code=400,
-            detail="Invalid side height - check base height, leg height and board thickness",
+            detail=f"Invalid dimensions for part '{part_type}': length={length}, width={width}. Both must be > 0",
         )
 
-    return side_height
+
+def _append_part(
+    parts: list[PartResponse],
+    module_id: str,
+    part_type: str,
+    length: int | float,
+    width: int | float,
+    thickness: int | float,
+) -> None:
+    _validate_part_dimensions(part_type, length, width)
+    parts.append(
+        PartResponse(
+            module_id=module_id,
+            part_type=part_type,
+            length=length,
+            width=width,
+            thickness=thickness,
+        )
+    )
 
 
 def generate_base_parts(
@@ -133,131 +191,112 @@ def generate_base_parts(
     leg_height: int,
 ) -> list[PartResponse]:
     parts: list[PartResponse] = []
-    side_left_to_floor = module.base_construction in {"side_to_floor_left", "side_to_floor_both"}
-    side_right_to_floor = module.base_construction in {"side_to_floor_right", "side_to_floor_both"}
-    non_floor_side_height = _calculate_non_floor_side_height(module, base_height, leg_height, board_thickness)
+
+    effective_bottom_rail_mode: BottomRailMode = (
+        "bottom_between_sides" if module.side_to_floor != "none" else module.bottom_rail_mode
+    )
+
+    normal_side_height = _base_side_height(module, base_height, leg_height, board_thickness)
+    if normal_side_height <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid side height - check base height, leg height and board thickness",
+        )
+
+    left_height = base_height if module.side_to_floor in {"left", "both"} else normal_side_height
+    right_height = base_height if module.side_to_floor in {"right", "both"} else normal_side_height
 
     if module.position != "end_left":
-        parts.append(
-            PartResponse(
-                module_id=module.module_id,
-                part_type="side_left",
-                width=module.depth,
-                height=base_height if side_left_to_floor else non_floor_side_height,
-                depth=module.depth,
-                thickness=board_thickness,
-            )
+        _append_part(
+            parts,
+            module.module_id,
+            "side_left",
+            length=left_height,
+            width=module.depth,
+            thickness=board_thickness,
         )
 
     if module.position != "end_right":
-        parts.append(
-            PartResponse(
-                module_id=module.module_id,
-                part_type="side_right",
-                width=module.depth,
-                height=base_height if side_right_to_floor else non_floor_side_height,
-                depth=module.depth,
-                thickness=board_thickness,
-            )
-        )
-
-    if module.bottom_rail_mode == "sides_on_bottom":
-        if module.base_construction == "legs":
-            bottom_width = module.width
-        elif module.base_construction in {"side_to_floor_left", "side_to_floor_right"}:
-            bottom_width = module.width - board_thickness
-        else:
-            bottom_width = module.width - (2 * board_thickness)
-    else:
-        bottom_width = module.width - (2 * board_thickness)
-
-    if bottom_width <= 0:
-        raise HTTPException(status_code=400, detail="Invalid bottom width - check board thickness and module width")
-
-    parts.append(
-        PartResponse(
-            module_id=module.module_id,
-            part_type="bottom",
-            width=bottom_width,
-            depth=module.depth,
+        _append_part(
+            parts,
+            module.module_id,
+            "side_right",
+            length=right_height,
+            width=module.depth,
             thickness=board_thickness,
         )
+
+    if module.side_to_floor != "none":
+        bottom_length = module.width - (2 * board_thickness)
+    elif effective_bottom_rail_mode == "sides_on_bottom":
+        bottom_length = module.width
+    else:
+        bottom_length = module.width - (2 * board_thickness)
+
+    _append_part(
+        parts,
+        module.module_id,
+        "bottom",
+        length=bottom_length,
+        width=module.depth,
+        thickness=board_thickness,
     )
 
     if module.top_mode == "full_top_on_sides":
-        parts.append(
-            PartResponse(
-                module_id=module.module_id,
-                part_type="top",
-                width=module.width,
-                depth=module.depth,
-                thickness=board_thickness,
-            )
-        )
+        top_length = module.width
+        _append_part(parts, module.module_id, "top", length=top_length, width=module.depth, thickness=board_thickness)
     elif module.top_mode == "full_top_between_sides":
-        parts.append(
-            PartResponse(
-                module_id=module.module_id,
-                part_type="top",
-                width=module.width - (2 * board_thickness),
-                depth=module.depth,
-                thickness=board_thickness,
-            )
-        )
+        top_length = module.width - (2 * board_thickness)
+        _append_part(parts, module.module_id, "top", length=top_length, width=module.depth, thickness=board_thickness)
     else:
-        traverse_width = module.width - (2 * board_thickness)
-        parts.append(
-            PartResponse(
-                module_id=module.module_id,
-                part_type="traverse_front",
-                width=traverse_width,
-                depth=100,
-                thickness=board_thickness,
-            )
+        traverse_length = module.width - (2 * board_thickness)
+        _append_part(
+            parts,
+            module.module_id,
+            "traverse_front",
+            length=traverse_length,
+            width=100,
+            thickness=board_thickness,
         )
-        parts.append(
-            PartResponse(
-                module_id=module.module_id,
-                part_type="traverse_back",
-                width=traverse_width,
-                depth=100,
-                thickness=board_thickness,
-            )
+        _append_part(
+            parts,
+            module.module_id,
+            "traverse_back",
+            length=traverse_length,
+            width=100,
+            thickness=board_thickness,
         )
 
-    parts.append(
-        PartResponse(
-            module_id=module.module_id,
-            part_type="back",
-            width=module.width,
-            height=module.height,
-            thickness=back_thickness,
-        )
+    _append_part(
+        parts,
+        module.module_id,
+        "back",
+        length=module.height,
+        width=module.width,
+        thickness=back_thickness,
     )
 
     if module.front_type == "doors":
         front_count = module.front_count if module.front_count > 0 else 1
         for _ in range(front_count):
-            parts.append(
-                PartResponse(
-                    module_id=module.module_id,
-                    part_type="door_front",
-                    width=module.width // front_count,
-                    height=module.height,
-                    thickness=board_thickness,
-                )
+            _append_part(
+                parts,
+                module.module_id,
+                "door_front",
+                length=module.height,
+                width=module.width / front_count,
+                thickness=board_thickness,
             )
     elif module.front_type == "drawers":
         front_count = module.front_count if module.front_count > 0 else 3
         for _ in range(front_count):
-            parts.append(
-                PartResponse(
-                    module_id=module.module_id,
-                    part_type="drawer_front",
-                    width=module.width,
-                    height=module.height // front_count,
-                    thickness=board_thickness,
-                )
+            _append_part(
+                parts,
+                module.module_id,
+                "drawer_front",
+                length=module.height / front_count,
+                width=module.width,
+                thickness=board_thickness,
             )
 
     return parts
@@ -270,7 +309,7 @@ def read_root() -> dict[str, str]:
 
 @app.get("/app", response_class=HTMLResponse)
 def app_status_page() -> HTMLResponse:
-    html = f"""
+    html = """
     <!DOCTYPE html>
     <html lang="pl">
     <head>
@@ -278,120 +317,27 @@ def app_status_page() -> HTMLResponse:
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Aplikacja meblowa - panel testowy</title>
         <style>
-            body {{
-                font-family: Arial, sans-serif;
-                margin: 24px;
-                color: #1f2937;
-            }}
-            h1, h2 {{
-                margin-bottom: 12px;
-            }}
-            .links {{
-                display: flex;
-                gap: 12px;
-                margin-bottom: 20px;
-                flex-wrap: wrap;
-            }}
-            .btn, button {{
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                padding: 8px 12px;
-                background: #f9fafb;
-                cursor: pointer;
-                text-decoration: none;
-                color: #111827;
-                font-size: 14px;
-            }}
-            .btn:hover, button:hover {{
-                background: #f3f4f6;
-            }}
-            form {{
-                max-width: 720px;
-                display: grid;
-                gap: 10px;
-                margin-bottom: 20px;
-            }}
-            label {{
-                display: grid;
-                gap: 6px;
-                font-weight: 600;
-            }}
-            input, textarea {{
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                padding: 8px;
-                font-size: 14px;
-                font-family: inherit;
-            }}
-            select {{
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                padding: 8px;
-                font-size: 14px;
-                font-family: inherit;
-            }}
-            .button-row {{
-                display: flex;
-                gap: 10px;
-                flex-wrap: wrap;
-            }}
-            .manual-module-box {{
-                max-width: 720px;
-                border: 1px solid #e5e7eb;
-                border-radius: 8px;
-                padding: 14px;
-                margin-bottom: 16px;
-            }}
-            .grid-2 {{
-                display: grid;
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-                gap: 10px;
-            }}
-            table {{
-                border-collapse: collapse;
-                width: 100%;
-                max-width: 960px;
-                margin-top: 10px;
-            }}
-            th, td {{
-                border: 1px solid #d1d5db;
-                padding: 8px;
-                text-align: left;
-                font-size: 14px;
-            }}
-            th {{
-                background: #f9fafb;
-            }}
-            #result-json {{
-                background: #f8fafc;
-                border: 1px solid #e5e7eb;
-                border-radius: 6px;
-                padding: 12px;
-                white-space: pre-wrap;
-                max-width: 960px;
-            }}
-            #error {{
-                color: #b91c1c;
-                font-weight: 700;
-                margin-top: 10px;
-            }}
-            .summary {{
-                margin-top: 12px;
-                max-width: 960px;
-                display: grid;
-                gap: 4px;
-                font-weight: 600;
-            }}
-            #manual-width-status {{
-                margin-top: 8px;
-                font-weight: 700;
-            }}
-            .status-ok {{
-                color: #15803d;
-            }}
-            .status-error {{
-                color: #b91c1c;
-            }}
+            body {{ font-family: Arial, sans-serif; margin: 24px; color: #1f2937; }}
+            h1, h2 {{ margin-bottom: 12px; }}
+            .links {{ display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }}
+            .btn, button {{ border: 1px solid #d1d5db; border-radius: 6px; padding: 8px 12px; background: #f9fafb; cursor: pointer; text-decoration: none; color: #111827; font-size: 14px; }}
+            .btn:hover, button:hover {{ background: #f3f4f6; }}
+            form {{ max-width: 720px; display: grid; gap: 10px; margin-bottom: 20px; }}
+            label {{ display: grid; gap: 6px; font-weight: 600; }}
+            input, textarea, select {{ border: 1px solid #d1d5db; border-radius: 6px; padding: 8px; font-size: 14px; font-family: inherit; }}
+            .button-row {{ display: flex; gap: 10px; flex-wrap: wrap; }}
+            .manual-module-box {{ max-width: 720px; border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px; margin-bottom: 16px; }}
+            .grid-2 {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }}
+            table {{ border-collapse: collapse; width: 100%; max-width: 1080px; margin-top: 10px; }}
+            th, td {{ border: 1px solid #d1d5db; padding: 8px; text-align: left; font-size: 14px; }}
+            th {{ background: #f9fafb; }}
+            #result-json {{ background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px; white-space: pre-wrap; max-width: 1080px; }}
+            #error {{ color: #b91c1c; font-weight: 700; margin-top: 10px; }}
+            .summary {{ margin-top: 12px; max-width: 960px; display: grid; gap: 4px; font-weight: 600; }}
+            #manual-width-status {{ margin-top: 8px; font-weight: 700; }}
+            .status-ok {{ color: #15803d; }}
+            .status-error {{ color: #b91c1c; }}
+            .hint {{ margin-top: 10px; padding: 8px 10px; border-radius: 6px; background: #fff7ed; border: 1px solid #fdba74; color: #9a3412; font-weight: 600; display: none; }}
         </style>
     </head>
     <body>
@@ -403,30 +349,14 @@ def app_status_page() -> HTMLResponse:
 
         <h2>Formularz projektu</h2>
         <form id="project-form">
-            <label>project_name
-                <input id="project_name" name="project_name" value="Projekt testowy" required />
-            </label>
-            <label>width
-                <input id="width" name="width" type="number" min="1" value="2600" required />
-            </label>
-            <label>height
-                <input id="height" name="height" type="number" min="1" value="2400" required />
-            </label>
-            <label>depth
-                <input id="depth" name="depth" type="number" min="1" value="600" required />
-            </label>
-            <label>base_height
-                <input id="base_height" name="base_height" type="number" min="1" value="720" required />
-            </label>
-            <label>leg_height
-                <input id="leg_height" name="leg_height" type="number" min="0" value="100" required />
-            </label>
-            <label>board_thickness
-                <input id="board_thickness" name="board_thickness" type="number" min="1" value="18" required />
-            </label>
-            <label>back_thickness
-                <input id="back_thickness" name="back_thickness" type="number" min="1" value="3" required />
-            </label>
+            <label>project_name<input id="project_name" name="project_name" value="Projekt testowy" required /></label>
+            <label>width<input id="width" name="width" type="number" min="1" value="2600" required /></label>
+            <label>height<input id="height" name="height" type="number" min="1" value="2400" required /></label>
+            <label>depth<input id="depth" name="depth" type="number" min="1" value="600" required /></label>
+            <label>base_height<input id="base_height" name="base_height" type="number" min="1" value="720" required /></label>
+            <label>leg_height<input id="leg_height" name="leg_height" type="number" min="0" value="100" required /></label>
+            <label>board_thickness<input id="board_thickness" name="board_thickness" type="number" min="1" value="18" required /></label>
+            <label>back_thickness<input id="back_thickness" name="back_thickness" type="number" min="1" value="3" required /></label>
             <div class="button-row">
                 <button type="button" id="auto-btn">Utwórz projekt automatycznie</button>
                 <button type="button" id="manual-btn">Utwórz projekt z modułami ręcznymi</button>
@@ -437,9 +367,7 @@ def app_status_page() -> HTMLResponse:
         <h2>Moduły ręczne</h2>
         <div class="manual-module-box">
             <div class="grid-2">
-                <label>width
-                    <input id="manual_width" type="number" min="1" value="300" />
-                </label>
+                <label>width<input id="manual_width" type="number" min="1" value="300" /></label>
                 <label>cabinet_type
                     <select id="manual_cabinet_type">
                         <option value="base">base = szafka niska pod blat</option>
@@ -462,12 +390,18 @@ def app_status_page() -> HTMLResponse:
                         <option value="empty">empty = pusta</option>
                     </select>
                 </label>
-                <label>base_construction
-                    <select id="manual_base_construction">
-                        <option value="legs">legs = na nogach</option>
-                        <option value="side_to_floor_left">side_to_floor_left = lewy bok do podłogi</option>
-                        <option value="side_to_floor_right">side_to_floor_right = prawy bok do podłogi</option>
-                        <option value="side_to_floor_both">side_to_floor_both = oba boki do podłogi</option>
+                <label>has_legs
+                    <select id="manual_has_legs">
+                        <option value="true">Tak</option>
+                        <option value="false">Nie</option>
+                    </select>
+                </label>
+                <label>side_to_floor
+                    <select id="manual_side_to_floor">
+                        <option value="none">none = żaden bok do podłogi</option>
+                        <option value="left">left = lewy bok do podłogi</option>
+                        <option value="right">right = prawy bok do podłogi</option>
+                        <option value="both">both = oba boki do podłogi</option>
                     </select>
                 </label>
                 <label>bottom_rail_mode
@@ -490,10 +424,9 @@ def app_status_page() -> HTMLResponse:
                         <option value="drawers">drawers = fronty szuflad</option>
                     </select>
                 </label>
-                <label>front_count
-                    <input id="manual_front_count" type="number" min="0" value="0" />
-                </label>
+                <label>front_count<input id="manual_front_count" type="number" min="0" value="0" /></label>
             </div>
+            <div id="side-floor-hint" class="hint">Przy boku do podłogi wieniec dolny jest wymuszony między bokami</div>
             <div class="button-row" style="margin-top: 10px;">
                 <button type="button" id="add-module-btn">Dodaj moduł</button>
                 <button type="button" id="clear-modules-btn">Wyczyść moduły ręczne</button>
@@ -503,17 +436,8 @@ def app_status_page() -> HTMLResponse:
         <table>
             <thead>
                 <tr>
-                    <th>nr</th>
-                    <th>width</th>
-                    <th>cabinet_type</th>
-                    <th>position</th>
-                    <th>content</th>
-                    <th>base_construction</th>
-                    <th>bottom_rail_mode</th>
-                    <th>top_mode</th>
-                    <th>front_type</th>
-                    <th>front_count</th>
-                    <th>akcja</th>
+                    <th>nr</th><th>width</th><th>cabinet_type</th><th>position</th><th>content</th>
+                    <th>has_legs</th><th>side_to_floor</th><th>bottom_rail_mode</th><th>top_mode</th><th>front_type</th><th>front_count</th><th>akcja</th>
                 </tr>
             </thead>
             <tbody id="manual-modules-body"></tbody>
@@ -525,29 +449,6 @@ def app_status_page() -> HTMLResponse:
             <div id="manual-width-status" class="status-error">Suma modułów nie zgadza się z szerokością projektu</div>
         </div>
 
-        <h2>Dostępne wartości</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Pole</th>
-                    <th>Wartość</th>
-                    <th>Opis</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr><td>cabinet_type</td><td>base</td><td>szafka niska pod blat</td></tr>
-                <tr><td>cabinet_type</td><td>tall</td><td>szafka wysoka pod sufit</td></tr>
-                <tr><td>position</td><td>normal</td><td>normalna</td></tr>
-                <tr><td>position</td><td>end_left</td><td>końcowa lewa</td></tr>
-                <tr><td>position</td><td>end_right</td><td>końcowa prawa</td></tr>
-                <tr><td>position</td><td>corner_left</td><td>narożna lewa</td></tr>
-                <tr><td>position</td><td>corner_right</td><td>narożna prawa</td></tr>
-                <tr><td>content</td><td>shelves</td><td>półki</td></tr>
-                <tr><td>content</td><td>drawers</td><td>szuflady</td></tr>
-                <tr><td>content</td><td>empty</td><td>pusta</td></tr>
-            </tbody>
-        </table>
-
         <h2>Wynik JSON</h2>
         <div id="error"></div>
         <pre id="result-json"></pre>
@@ -556,28 +457,17 @@ def app_status_page() -> HTMLResponse:
         <table>
             <thead>
                 <tr>
-                    <th>module_id</th>
-                    <th>module_type</th>
-                    <th>width</th>
-                    <th>height</th>
-                    <th>depth</th>
-                    <th>position</th>
-                    <th>content</th>
+                    <th>module_id</th><th>module_type</th><th>width</th><th>height</th><th>depth</th><th>position</th><th>content</th>
+                    <th>has_legs</th><th>side_to_floor</th><th>bottom_rail_mode</th><th>top_mode</th><th>front_type</th><th>front_count</th>
                 </tr>
             </thead>
             <tbody id="modules-body"></tbody>
         </table>
+
         <h2>Parts projektu</h2>
         <table>
             <thead>
-                <tr>
-                    <th>module_id</th>
-                    <th>part_type</th>
-                    <th>width</th>
-                    <th>height</th>
-                    <th>depth</th>
-                    <th>thickness</th>
-                </tr>
+                <tr><th>module_id</th><th>part_type</th><th>length</th><th>width</th><th>thickness</th></tr>
             </thead>
             <tbody id="parts-body"></tbody>
         </table>
@@ -594,17 +484,20 @@ def app_status_page() -> HTMLResponse:
             const manualWidthStatus = document.getElementById("manual-width-status");
             const projectWidthInput = document.getElementById("width");
             const partsBody = document.getElementById("parts-body");
+            const manualSideToFloor = document.getElementById("manual_side_to_floor");
+            const manualBottomRailMode = document.getElementById("manual_bottom_rail_mode");
+            const sideFloorHint = document.getElementById("side-floor-hint");
             const manualModules = [];
 
-            function clearResult() {{
+            function clearResult() {
                 resultJson.textContent = "";
                 errorBox.textContent = "";
                 modulesBody.innerHTML = "";
                 partsBody.innerHTML = "";
-            }}
+            }
 
-            function basePayload() {{
-                return {{
+            function basePayload() {
+                return {
                     project_name: document.getElementById("project_name").value,
                     width: Number(document.getElementById("width").value),
                     height: Number(document.getElementById("height").value),
@@ -613,160 +506,146 @@ def app_status_page() -> HTMLResponse:
                     leg_height: Number(document.getElementById("leg_height").value),
                     board_thickness: Number(document.getElementById("board_thickness").value),
                     back_thickness: Number(document.getElementById("back_thickness").value)
-                }};
-            }}
+                };
+            }
 
-            function updateManualSummary() {{
+            function updateFloorHint() {
+                const hasSideToFloor = manualSideToFloor.value !== "none";
+                sideFloorHint.style.display = hasSideToFloor ? "block" : "none";
+                if (hasSideToFloor) {
+                    manualBottomRailMode.value = "bottom_between_sides";
+                }
+            }
+
+            function updateManualSummary() {
                 const projectWidth = Number(projectWidthInput.value) || 0;
                 const totalManualWidth = manualModules.reduce((acc, module) => acc + module.width, 0);
                 const diff = projectWidth - totalManualWidth;
-
-                manualWidthSum.textContent = `Suma modułów: ${{totalManualWidth}} mm`;
-                projectWidthInfo.textContent = `Szerokość projektu: ${{projectWidth}} mm`;
-                manualWidthDiff.textContent = `Różnica: ${{diff}} mm`;
-
-                if (totalManualWidth === projectWidth) {{
+                manualWidthSum.textContent = `Suma modułów: ${totalManualWidth} mm`;
+                projectWidthInfo.textContent = `Szerokość projektu: ${projectWidth} mm`;
+                manualWidthDiff.textContent = `Różnica: ${diff} mm`;
+                if (totalManualWidth === projectWidth) {
                     manualWidthStatus.textContent = "Suma modułów zgadza się z szerokością projektu";
                     manualWidthStatus.classList.add("status-ok");
                     manualWidthStatus.classList.remove("status-error");
-                }} else {{
+                } else {
                     manualWidthStatus.textContent = "Suma modułów nie zgadza się z szerokością projektu";
                     manualWidthStatus.classList.add("status-error");
                     manualWidthStatus.classList.remove("status-ok");
-                }}
-            }}
+                }
+            }
 
-            function renderManualModules() {{
+            function renderManualModules() {
                 manualModulesBody.innerHTML = "";
-                manualModules.forEach((module, index) => {{
+                manualModules.forEach((module, index) => {
                     const row = document.createElement("tr");
                     row.innerHTML = `
-                        <td>${{index + 1}}</td>
-                        <td>${{module.width}}</td>
-                        <td>${{module.cabinet_type}}</td>
-                        <td>${{module.position}}</td>
-                        <td>${{module.content}}</td>
-                        <td>${{module.base_construction}}</td>
-                        <td>${{module.bottom_rail_mode}}</td>
-                        <td>${{module.top_mode}}</td>
-                        <td>${{module.front_type}}</td>
-                        <td>${{module.front_count}}</td>
-                        <td><button type="button" data-index="${{index}}">Usuń</button></td>
+                        <td>${index + 1}</td><td>${module.width}</td><td>${module.cabinet_type}</td><td>${module.position}</td><td>${module.content}</td>
+                        <td>${module.has_legs ? "Tak" : "Nie"}</td><td>${module.side_to_floor}</td><td>${module.bottom_rail_mode}</td><td>${module.top_mode}</td><td>${module.front_type}</td><td>${module.front_count}</td>
+                        <td><button type="button" data-index="${index}">Usuń</button></td>
                     `;
-                    const deleteBtn = row.querySelector("button");
-                    deleteBtn.addEventListener("click", () => {{
+                    row.querySelector("button").addEventListener("click", () => {
                         manualModules.splice(index, 1);
                         renderManualModules();
                         updateManualSummary();
-                    }});
+                    });
                     manualModulesBody.appendChild(row);
-                }});
-            }}
+                });
+            }
 
-            function renderParts(parts) {{
+            function renderParts(parts) {
                 partsBody.innerHTML = "";
-                for (const part of parts) {{
+                for (const part of parts) {
                     const row = document.createElement("tr");
-                    row.innerHTML = `
-                        <td>${{part.module_id}}</td>
-                        <td>${{part.part_type}}</td>
-                        <td>${{part.width}}</td>
-                        <td>${{part.height ?? ""}}</td>
-                        <td>${{part.depth ?? ""}}</td>
-                        <td>${{part.thickness}}</td>
-                    `;
+                    row.innerHTML = `<td>${part.module_id}</td><td>${part.part_type}</td><td>${part.length}</td><td>${part.width}</td><td>${part.thickness}</td>`;
                     partsBody.appendChild(row);
-                }}
-            }}
+                }
+            }
 
-            function renderModules(modules) {{
+            function renderModules(modules) {
                 modulesBody.innerHTML = "";
-                for (const module of modules) {{
+                for (const module of modules) {
                     const row = document.createElement("tr");
                     row.innerHTML = `
-                        <td>${{module.module_id}}</td>
-                        <td>${{module.module_type}}</td>
-                        <td>${{module.width}}</td>
-                        <td>${{module.height}}</td>
-                        <td>${{module.depth}}</td>
-                        <td>${{module.position}}</td>
-                        <td>${{module.content}}</td>
+                        <td>${module.module_id}</td><td>${module.module_type}</td><td>${module.width}</td><td>${module.height}</td><td>${module.depth}</td><td>${module.position}</td><td>${module.content}</td>
+                        <td>${module.has_legs ? "Tak" : "Nie"}</td><td>${module.side_to_floor}</td><td>${module.bottom_rail_mode}</td><td>${module.top_mode}</td><td>${module.front_type}</td><td>${module.front_count}</td>
                     `;
                     modulesBody.appendChild(row);
-                }}
-            }}
+                }
+            }
 
-            async function sendProject(useManualModules) {{
+            async function sendProject(useManualModules) {
                 clearResult();
-                try {{
+                try {
                     const payload = basePayload();
-                    if (useManualModules) {{
-                        payload.manual_modules = manualModules;
-                    }}
-
-                    const response = await fetch("/projects/from-manual", {{
+                    if (useManualModules) payload.manual_modules = manualModules;
+                    const response = await fetch("/projects/from-manual", {
                         method: "POST",
-                        headers: {{"Content-Type": "application/json"}},
+                        headers: {"Content-Type": "application/json"},
                         body: JSON.stringify(payload)
-                    }});
-
+                    });
                     const data = await response.json();
-                    if (!response.ok) {{
-                        throw new Error(data.detail || "Wystąpił błąd");
-                    }}
-
+                    if (!response.ok) throw new Error(data.detail || "Wystąpił błąd");
                     resultJson.textContent = JSON.stringify(data, null, 2);
                     renderModules(data.project?.modules || []);
                     renderParts(data.project?.parts || []);
-                }} catch (error) {{
+                } catch (error) {
                     errorBox.textContent = error.message;
-                }}
-            }}
+                }
+            }
 
-            function addManualModule() {{
+            function addManualModule() {
                 const width = Number(document.getElementById("manual_width").value);
-                if (!Number.isInteger(width) || width <= 0) {{
+                if (!Number.isInteger(width) || width <= 0) {
                     errorBox.textContent = "Szerokość modułu musi być dodatnią liczbą całkowitą";
                     return;
-                }}
+                }
                 const frontCount = Number(document.getElementById("manual_front_count").value);
-                if (!Number.isInteger(frontCount) || frontCount < 0) {{
+                if (!Number.isInteger(frontCount) || frontCount < 0) {
                     errorBox.textContent = "front_count musi być liczbą całkowitą >= 0";
                     return;
-                }}
+                }
+
+                const sideToFloor = manualSideToFloor.value;
+                const bottomRailMode = sideToFloor === "none" ? manualBottomRailMode.value : "bottom_between_sides";
+
                 errorBox.textContent = "";
-                manualModules.push({{
+                manualModules.push({
                     width,
                     cabinet_type: document.getElementById("manual_cabinet_type").value,
                     position: document.getElementById("manual_position").value,
                     content: document.getElementById("manual_content").value,
-                    base_construction: document.getElementById("manual_base_construction").value,
-                    bottom_rail_mode: document.getElementById("manual_bottom_rail_mode").value,
+                    has_legs: document.getElementById("manual_has_legs").value === "true",
+                    side_to_floor: sideToFloor,
+                    bottom_rail_mode: bottomRailMode,
                     top_mode: document.getElementById("manual_top_mode").value,
                     front_type: document.getElementById("manual_front_type").value,
                     front_count: frontCount
-                }});
+                });
                 renderManualModules();
                 updateManualSummary();
-            }}
+            }
 
             document.getElementById("auto-btn").addEventListener("click", () => sendProject(false));
             document.getElementById("manual-btn").addEventListener("click", () => sendProject(true));
             document.getElementById("add-module-btn").addEventListener("click", addManualModule);
-            document.getElementById("clear-modules-btn").addEventListener("click", () => {{
+            document.getElementById("clear-modules-btn").addEventListener("click", () => {
                 manualModules.length = 0;
                 renderManualModules();
                 updateManualSummary();
-            }});
+            });
             projectWidthInput.addEventListener("input", updateManualSummary);
-            document.getElementById("clear-btn").addEventListener("click", () => {{
+            manualSideToFloor.addEventListener("change", updateFloorHint);
+            document.getElementById("clear-btn").addEventListener("click", () => {
                 form.reset();
                 manualModules.length = 0;
                 renderManualModules();
                 updateManualSummary();
                 clearResult();
-            }});
+                updateFloorHint();
+            });
             updateManualSummary();
+            updateFloorHint();
         </script>
     </body>
     </html>
@@ -806,29 +685,9 @@ def view_modules() -> HTMLResponse:
         <meta charset="UTF-8" />
         <title>Module View</title>
         <style>
-            body {{
-                font-family: Arial, sans-serif;
-                margin: 24px;
-            }}
-            .canvas {{
-                display: flex;
-                align-items: flex-end;
-                gap: 8px;
-                border: 1px solid #ddd;
-                padding: 12px;
-                overflow-x: auto;
-            }}
-            .module {{
-                display: flex;
-                flex-direction: column;
-                justify-content: center;
-                align-items: center;
-                border: 1px solid #333;
-                box-sizing: border-box;
-                color: #111;
-                font-size: 14px;
-                flex: 0 0 auto;
-            }}
+            body {{ font-family: Arial, sans-serif; margin: 24px; }}
+            .canvas {{ display: flex; align-items: flex-end; gap: 8px; border: 1px solid #ddd; padding: 12px; overflow-x: auto; }}
+            .module {{ display: flex; flex-direction: column; justify-content: center; align-items: center; border: 1px solid #333; box-sizing: border-box; color: #111; font-size: 14px; flex: 0 0 auto; }}
         </style>
     </head>
     <body>
@@ -856,6 +715,7 @@ def create_project_from_manual(payload: ManualProjectRequest) -> ManualProjectRe
         modules = []
         parts = []
         for idx, module in enumerate(payload.manual_modules, start=1):
+            has_legs, side_to_floor, bottom_rail_mode, legacy_base_construction = _normalize_module_config(module)
             module_type = "base_cabinet" if module.cabinet_type == "base" else "tall_cabinet"
             module_height = payload.base_height if module.cabinet_type == "base" else payload.height
             response_module = ModuleResponse(
@@ -866,8 +726,10 @@ def create_project_from_manual(payload: ManualProjectRequest) -> ManualProjectRe
                 depth=payload.depth,
                 position=module.position,
                 content=module.content,
-                base_construction=module.base_construction,
-                bottom_rail_mode=module.bottom_rail_mode,
+                has_legs=has_legs,
+                side_to_floor=side_to_floor,
+                base_construction=legacy_base_construction,
+                bottom_rail_mode=bottom_rail_mode,
                 top_mode=module.top_mode,
                 front_type=module.front_type,
                 front_count=module.front_count,
@@ -884,47 +746,11 @@ def create_project_from_manual(payload: ManualProjectRequest) -> ManualProjectRe
                     )
                 )
             else:
-                parts.extend(
-                    [
-                        PartResponse(
-                            module_id=response_module.module_id,
-                            part_type="side_left",
-                            width=response_module.depth,
-                            height=response_module.height,
-                            depth=response_module.depth,
-                            thickness=payload.board_thickness,
-                        ),
-                        PartResponse(
-                            module_id=response_module.module_id,
-                            part_type="side_right",
-                            width=response_module.depth,
-                            height=response_module.height,
-                            depth=response_module.depth,
-                            thickness=payload.board_thickness,
-                        ),
-                        PartResponse(
-                            module_id=response_module.module_id,
-                            part_type="bottom",
-                            width=response_module.width,
-                            depth=response_module.depth,
-                            thickness=payload.board_thickness,
-                        ),
-                        PartResponse(
-                            module_id=response_module.module_id,
-                            part_type="top",
-                            width=response_module.width,
-                            depth=response_module.depth,
-                            thickness=payload.board_thickness,
-                        ),
-                        PartResponse(
-                            module_id=response_module.module_id,
-                            part_type="back",
-                            width=response_module.width,
-                            height=response_module.height,
-                            thickness=payload.back_thickness,
-                        ),
-                    ]
-                )
+                _append_part(parts, response_module.module_id, "side_left", response_module.height, response_module.depth, payload.board_thickness)
+                _append_part(parts, response_module.module_id, "side_right", response_module.height, response_module.depth, payload.board_thickness)
+                _append_part(parts, response_module.module_id, "bottom", response_module.width, response_module.depth, payload.board_thickness)
+                _append_part(parts, response_module.module_id, "top", response_module.width, response_module.depth, payload.board_thickness)
+                _append_part(parts, response_module.module_id, "back", response_module.height, response_module.width, payload.back_thickness)
 
     project = ProjectResponse(
         project_name=payload.project_name,
