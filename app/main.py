@@ -28,6 +28,7 @@ class ManualProjectRequest(BaseModel):
     height: int = Field(gt=0)
     depth: int = Field(gt=0)
     base_height: int = Field(default=720, gt=0)
+    leg_height: int = Field(default=100, ge=0)
     board_thickness: int = Field(default=18, gt=0)
     back_thickness: int = Field(default=3, gt=0)
     manual_modules: list[ManualModuleInput] | None = None
@@ -62,6 +63,8 @@ class ProjectResponse(BaseModel):
     width: int = Field(gt=0)
     height: int = Field(gt=0)
     depth: int = Field(gt=0)
+    base_height: int = Field(gt=0)
+    leg_height: int = Field(ge=0)
     board_thickness: int = Field(gt=0)
     back_thickness: int = Field(gt=0)
     module_source: ModuleSource
@@ -104,10 +107,35 @@ def generate_modules(width: int, height: int, depth: int) -> list[ModuleResponse
     return modules
 
 
-def generate_base_parts(module: ModuleResponse, board_thickness: int, back_thickness: int, base_height: int) -> list[PartResponse]:
+def _calculate_non_floor_side_height(module: ModuleResponse, base_height: int, leg_height: int, board_thickness: int) -> int:
+    side_height = base_height - leg_height
+
+    if module.bottom_rail_mode == "sides_on_bottom":
+        side_height -= board_thickness
+
+    if module.top_mode == "full_top_on_sides":
+        side_height -= board_thickness
+
+    if side_height <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid side height - check base height, leg height and board thickness",
+        )
+
+    return side_height
+
+
+def generate_base_parts(
+    module: ModuleResponse,
+    board_thickness: int,
+    back_thickness: int,
+    base_height: int,
+    leg_height: int,
+) -> list[PartResponse]:
     parts: list[PartResponse] = []
     side_left_to_floor = module.base_construction in {"side_to_floor_left", "side_to_floor_both"}
     side_right_to_floor = module.base_construction in {"side_to_floor_right", "side_to_floor_both"}
+    non_floor_side_height = _calculate_non_floor_side_height(module, base_height, leg_height, board_thickness)
 
     if module.position != "end_left":
         parts.append(
@@ -115,7 +143,7 @@ def generate_base_parts(module: ModuleResponse, board_thickness: int, back_thick
                 module_id=module.module_id,
                 part_type="side_left",
                 width=module.depth,
-                height=base_height + 100 if side_left_to_floor else base_height,
+                height=base_height if side_left_to_floor else non_floor_side_height,
                 depth=module.depth,
                 thickness=board_thickness,
             )
@@ -127,7 +155,7 @@ def generate_base_parts(module: ModuleResponse, board_thickness: int, back_thick
                 module_id=module.module_id,
                 part_type="side_right",
                 width=module.depth,
-                height=base_height + 100 if side_right_to_floor else base_height,
+                height=base_height if side_right_to_floor else non_floor_side_height,
                 depth=module.depth,
                 thickness=board_thickness,
             )
@@ -390,6 +418,9 @@ def app_status_page() -> HTMLResponse:
             <label>base_height
                 <input id="base_height" name="base_height" type="number" min="1" value="720" required />
             </label>
+            <label>leg_height
+                <input id="leg_height" name="leg_height" type="number" min="0" value="100" required />
+            </label>
             <label>board_thickness
                 <input id="board_thickness" name="board_thickness" type="number" min="1" value="18" required />
             </label>
@@ -579,6 +610,7 @@ def app_status_page() -> HTMLResponse:
                     height: Number(document.getElementById("height").value),
                     depth: Number(document.getElementById("depth").value),
                     base_height: Number(document.getElementById("base_height").value),
+                    leg_height: Number(document.getElementById("leg_height").value),
                     board_thickness: Number(document.getElementById("board_thickness").value),
                     back_thickness: Number(document.getElementById("back_thickness").value)
                 }};
@@ -848,6 +880,7 @@ def create_project_from_manual(payload: ManualProjectRequest) -> ManualProjectRe
                         board_thickness=payload.board_thickness,
                         back_thickness=payload.back_thickness,
                         base_height=payload.base_height,
+                        leg_height=payload.leg_height,
                     )
                 )
             else:
@@ -898,6 +931,8 @@ def create_project_from_manual(payload: ManualProjectRequest) -> ManualProjectRe
         width=payload.width,
         height=payload.height,
         depth=payload.depth,
+        base_height=payload.base_height,
+        leg_height=payload.leg_height,
         board_thickness=payload.board_thickness,
         back_thickness=payload.back_thickness,
         module_source=module_source,
