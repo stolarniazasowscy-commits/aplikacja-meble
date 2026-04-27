@@ -27,6 +27,7 @@ class ManualProjectRequest(BaseModel):
     width: int = Field(gt=0)
     height: int = Field(gt=0)
     depth: int = Field(gt=0)
+    base_height: int = Field(default=720, gt=0)
     board_thickness: int = Field(default=18, gt=0)
     back_thickness: int = Field(default=3, gt=0)
     manual_modules: list[ManualModuleInput] | None = None
@@ -103,7 +104,7 @@ def generate_modules(width: int, height: int, depth: int) -> list[ModuleResponse
     return modules
 
 
-def generate_base_parts(module: ModuleResponse, board_thickness: int, back_thickness: int) -> list[PartResponse]:
+def generate_base_parts(module: ModuleResponse, board_thickness: int, back_thickness: int, base_height: int) -> list[PartResponse]:
     parts: list[PartResponse] = []
     side_left_to_floor = module.base_construction in {"side_to_floor_left", "side_to_floor_both"}
     side_right_to_floor = module.base_construction in {"side_to_floor_right", "side_to_floor_both"}
@@ -114,7 +115,7 @@ def generate_base_parts(module: ModuleResponse, board_thickness: int, back_thick
                 module_id=module.module_id,
                 part_type="side_left",
                 width=module.depth,
-                height=820 if side_left_to_floor else 720,
+                height=base_height + 100 if side_left_to_floor else base_height,
                 depth=module.depth,
                 thickness=board_thickness,
             )
@@ -126,13 +127,25 @@ def generate_base_parts(module: ModuleResponse, board_thickness: int, back_thick
                 module_id=module.module_id,
                 part_type="side_right",
                 width=module.depth,
-                height=820 if side_right_to_floor else 720,
+                height=base_height + 100 if side_right_to_floor else base_height,
                 depth=module.depth,
                 thickness=board_thickness,
             )
         )
 
-    bottom_width = module.width if module.bottom_rail_mode == "sides_on_bottom" else module.width - (2 * board_thickness)
+    if module.bottom_rail_mode == "sides_on_bottom":
+        if module.base_construction == "legs":
+            bottom_width = module.width
+        elif module.base_construction in {"side_to_floor_left", "side_to_floor_right"}:
+            bottom_width = module.width - board_thickness
+        else:
+            bottom_width = module.width - (2 * board_thickness)
+    else:
+        bottom_width = module.width - (2 * board_thickness)
+
+    if bottom_width <= 0:
+        raise HTTPException(status_code=400, detail="Invalid bottom width - check board thickness and module width")
+
     parts.append(
         PartResponse(
             module_id=module.module_id,
@@ -374,6 +387,9 @@ def app_status_page() -> HTMLResponse:
             <label>depth
                 <input id="depth" name="depth" type="number" min="1" value="600" required />
             </label>
+            <label>base_height
+                <input id="base_height" name="base_height" type="number" min="1" value="720" required />
+            </label>
             <label>board_thickness
                 <input id="board_thickness" name="board_thickness" type="number" min="1" value="18" required />
             </label>
@@ -562,6 +578,7 @@ def app_status_page() -> HTMLResponse:
                     width: Number(document.getElementById("width").value),
                     height: Number(document.getElementById("height").value),
                     depth: Number(document.getElementById("depth").value),
+                    base_height: Number(document.getElementById("base_height").value),
                     board_thickness: Number(document.getElementById("board_thickness").value),
                     back_thickness: Number(document.getElementById("back_thickness").value)
                 }};
@@ -807,16 +824,8 @@ def create_project_from_manual(payload: ManualProjectRequest) -> ManualProjectRe
         modules = []
         parts = []
         for idx, module in enumerate(payload.manual_modules, start=1):
-            if module.width - (2 * payload.board_thickness) <= 0:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        f"Nieprawidłowa szerokość modułu M{idx}: "
-                        "module.width - 2 * board_thickness musi być > 0"
-                    ),
-                )
             module_type = "base_cabinet" if module.cabinet_type == "base" else "tall_cabinet"
-            module_height = 720 if module.cabinet_type == "base" else payload.height
+            module_height = payload.base_height if module.cabinet_type == "base" else payload.height
             response_module = ModuleResponse(
                 module_id=f"M{idx}",
                 module_type=module_type,
@@ -838,6 +847,7 @@ def create_project_from_manual(payload: ManualProjectRequest) -> ManualProjectRe
                         module=response_module,
                         board_thickness=payload.board_thickness,
                         back_thickness=payload.back_thickness,
+                        base_height=payload.base_height,
                     )
                 )
             else:
