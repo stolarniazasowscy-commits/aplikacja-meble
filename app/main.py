@@ -499,8 +499,8 @@ def app_status_page() -> HTMLResponse:
                         <label>Wpuszczenie pleców w kanalik [mm]<input id="back_groove_insert" name="back_groove_insert" type="number" min="0" value="3" required /></label>
                         <label>Wysokość szafki dolnej [mm]<input id="base_height" name="base_height" type="number" min="1" value="720" required /></label>
                         <label>Wysokość nóg [mm]<input id="leg_height" name="leg_height" type="number" min="0" value="100" required /></label>
-                        <label>back_groove_offset<input id="back_groove_offset" name="back_groove_offset" type="number" min="0" value="10" required /></label>
-                        <label>back_groove_insert<input id="back_groove_insert" name="back_groove_insert" type="number" min="0" value="10" required /></label>
+                        <label>Cofnięcie kanałka od tyłu [mm]<input id="back_groove_offset" name="back_groove_offset" type="number" min="0" value="10" required /></label>
+                        <label>Wpuszczenie pleców w kanałek [mm]<input id="back_groove_insert" name="back_groove_insert" type="number" min="0" value="10" required /></label>
                     </div>
                     <div id="back-type-description" class="hint" style="display:block;background:#eef2ff;border-color:#a5b4fc;color:#3730a3;"></div>
                     <div class="button-row">
