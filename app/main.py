@@ -2,9 +2,11 @@ from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 app = FastAPI()
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 ModuleSource = Literal["manual", "auto"]
 MANUAL_WIDTH_SUM_ERROR = "Sum of manual module widths must equal total project width"
@@ -681,6 +683,8 @@ def app_status_page() -> HTMLResponse:
                 .form-grid { grid-template-columns: 1fr; }
             }
         </style>
+        <link rel="stylesheet" href="/static/visualizer.css">
+        <script src="/static/visualizer.js"></script>
     </head>
     <body>
         <div class="container">
@@ -880,6 +884,12 @@ def app_status_page() -> HTMLResponse:
                 </div>
             </section>
 
+
+            <section class="card">
+                <h2>Podgląd zabudowy 2D</h2>
+                <div id="cabinet-visualizer"></div>
+            </section>
+
             <section class="card">
                 <h2>Tabela elementów</h2>
                 <div class="table-wrap">
@@ -968,6 +978,7 @@ def app_status_page() -> HTMLResponse:
                 errorBox.textContent = "";
                 modulesBody.innerHTML = "";
                 partsBody.innerHTML = "";
+                renderCabinetPreview(null);
             }
 
             function basePayload() {
@@ -1171,6 +1182,7 @@ def app_status_page() -> HTMLResponse:
                     resultJson.textContent = JSON.stringify(data, null, 2);
                     renderModules(data.project?.modules || []);
                     renderParts(data.project?.parts || []);
+                    renderCabinetPreview(data);
                 } catch (error) {
                     errorBox.textContent = error.message;
                 }
