@@ -13,12 +13,12 @@ LegacyBaseConstruction = Literal["legs", "side_to_floor_left", "side_to_floor_ri
 SideToFloor = Literal["none", "left", "right", "both"]
 BottomRailMode = Literal["sides_on_bottom", "bottom_between_sides"]
 BackType = Literal["overlay", "groove", "between"]
-CabinetTemplate = Literal["standard", "sink", "oven_under_counter"]
+CabinetType = Literal["base", "base_standard", "base_sink", "base_oven", "tall"]
 
 
 class ManualModuleInput(BaseModel):
     width: int = Field(gt=0)
-    cabinet_type: Literal["base", "tall"]
+    cabinet_type: CabinetType
     position: Literal["normal", "end_left", "end_right", "corner_left", "corner_right"]
     content: Literal["shelves", "drawers", "empty"]
     has_legs: bool = True
@@ -28,11 +28,10 @@ class ManualModuleInput(BaseModel):
     top_mode: Literal["full_top_on_sides", "full_top_between_sides", "traverses"] = "full_top_on_sides"
     front_type: Literal["none", "doors", "drawers"] = "none"
     front_count: int = Field(default=0, ge=0)
-    cabinet_template: CabinetTemplate = "standard"
     sink_bottom_back_height: int = Field(default=200, gt=0)
     sink_vertical_traverse_width: int = Field(default=100, gt=0)
     oven_opening_height: int = Field(default=600, gt=0)
-    oven_drawer_height: int = Field(default=140, gt=0)
+    oven_drawer_height: int = Field(default=0, ge=0)
     oven_back_traverse_width: int = Field(default=100, gt=0)
     base_height: int = Field(default=820, gt=0)
     leg_height: int = Field(default=100, ge=0)
@@ -73,11 +72,11 @@ class ModuleResponse(BaseModel):
     top_mode: Literal["full_top_on_sides", "full_top_between_sides", "traverses"] = "full_top_on_sides"
     front_type: Literal["none", "doors", "drawers"] = "none"
     front_count: int = Field(default=0, ge=0)
-    cabinet_template: CabinetTemplate = "standard"
+    cabinet_type: CabinetType = "base_standard"
     sink_bottom_back_height: int = Field(default=200, gt=0)
     sink_vertical_traverse_width: int = Field(default=100, gt=0)
     oven_opening_height: int = Field(default=600, gt=0)
-    oven_drawer_height: int = Field(default=140, gt=0)
+    oven_drawer_height: int = Field(default=0, ge=0)
     oven_back_traverse_width: int = Field(default=100, gt=0)
     base_height: int = Field(gt=0)
     leg_height: int = Field(ge=0)
@@ -183,7 +182,7 @@ def generate_modules(
                 top_mode="full_top_on_sides",
                 front_type="none",
                 front_count=0,
-                cabinet_template="standard",
+                cabinet_type="base_standard",
                 sink_bottom_back_height=200,
                 sink_vertical_traverse_width=100,
                 oven_opening_height=600,
@@ -351,7 +350,9 @@ def generate_base_parts(
         thickness=board_thickness,
     )
 
-    if module.cabinet_template == "sink":
+    normalized_cabinet_type = _normalize_cabinet_type(module.cabinet_type)
+
+    if normalized_cabinet_type == "base_sink":
         inside_width = module.width - (2 * board_thickness)
         if inside_width <= 0:
             raise HTTPException(status_code=400, detail="Invalid sink cabinet width after subtracting side thickness")
@@ -379,10 +380,15 @@ def generate_base_parts(
             width=inside_width,
             thickness=back_thickness,
         )
-    elif module.cabinet_template == "oven_under_counter":
+    elif normalized_cabinet_type == "base_oven":
         inside_width = module.width - (2 * board_thickness)
         if inside_width <= 0:
             raise HTTPException(status_code=400, detail="Invalid oven cabinet width after subtracting side thickness")
+        oven_drawer_height = module.oven_drawer_height
+        if oven_drawer_height <= 0:
+            oven_drawer_height = module.height - module.oven_opening_height - board_thickness
+        if oven_drawer_height <= 0:
+            raise HTTPException(status_code=400, detail="oven_drawer_height must be > 0")
         _append_part(
             parts,
             module.module_id,
@@ -403,9 +409,17 @@ def generate_base_parts(
             parts,
             module.module_id,
             "oven_drawer_back",
-            length=module.oven_drawer_height,
+            length=oven_drawer_height,
             width=inside_width,
             thickness=back_thickness,
+        )
+        _append_part(
+            parts,
+            module.module_id,
+            "oven_drawer_front",
+            length=oven_drawer_height - 6,
+            width=module.width - 6,
+            thickness=board_thickness,
         )
     else:
         if module.top_mode == "full_top_on_sides":
@@ -471,16 +485,6 @@ def generate_base_parts(
                 width=module.width,
                 thickness=board_thickness,
             )
-    if module.cabinet_template == "oven_under_counter":
-        _append_part(
-            parts,
-            module.module_id,
-            "oven_drawer_front",
-            length=module.oven_drawer_height - 6,
-            width=module.width - 6,
-            thickness=board_thickness,
-        )
-
     return parts
 
 
@@ -501,31 +505,34 @@ def _effective_module_technology(module: ManualModuleInput, module_id: str, warn
     }
 
 
-def _validate_special_template_constraints(module: ManualModuleInput) -> None:
-    if module.cabinet_type == "tall" and module.cabinet_template != "standard":
-        raise HTTPException(status_code=400, detail="Special cabinet templates are supported only for base cabinets")
+def _normalize_cabinet_type(cabinet_type: CabinetType) -> Literal["base_standard", "base_sink", "base_oven", "tall"]:
+    if cabinet_type == "base":
+        return "base_standard"
+    return cabinet_type
+
+
+def _validate_cabinet_type_constraints(module: ManualModuleInput) -> None:
+    cabinet_type = _normalize_cabinet_type(module.cabinet_type)
 
     inside_width = module.width - (2 * module.board_thickness)
     if inside_width <= 0:
         raise HTTPException(status_code=400, detail="Invalid module width after subtracting board thickness")
 
-    if module.cabinet_template == "sink":
+    if cabinet_type == "base_sink":
         if module.sink_bottom_back_height <= 0:
             raise HTTPException(status_code=400, detail="sink_bottom_back_height must be > 0")
         if module.sink_vertical_traverse_width <= 0:
             raise HTTPException(status_code=400, detail="sink_vertical_traverse_width must be > 0")
-    elif module.cabinet_template == "oven_under_counter":
+    elif cabinet_type == "base_oven":
         if module.oven_opening_height <= 0:
             raise HTTPException(status_code=400, detail="oven_opening_height must be > 0")
-        if module.oven_drawer_height <= 0:
-            raise HTTPException(status_code=400, detail="oven_drawer_height must be > 0")
         if module.oven_back_traverse_width <= 0:
             raise HTTPException(status_code=400, detail="oven_back_traverse_width must be > 0")
-        if module.oven_opening_height + module.oven_drawer_height > module.base_height:
-            raise HTTPException(
-                status_code=400,
-                detail="oven_opening_height + oven_drawer_height must be <= module height",
-            )
+        oven_drawer_height = module.oven_drawer_height
+        if oven_drawer_height <= 0:
+            oven_drawer_height = module.base_height - module.oven_opening_height - module.board_thickness
+        if oven_drawer_height <= 0:
+            raise HTTPException(status_code=400, detail="oven_drawer_height must be > 0")
 
 
 def generate_parts_for_module(module: ModuleResponse) -> list[PartResponse]:
@@ -737,7 +744,9 @@ def app_status_page() -> HTMLResponse:
                     <label>Szerokość modułu [mm]<input id="manual_width" type="number" min="1" value="300" /></label>
                     <label>Typ szafki
                         <select id="manual_cabinet_type">
-                            <option value="base">Szafka dolna</option>
+                            <option value="base_standard">Dolna zwykła</option>
+                            <option value="base_sink">Dolna pod zlew</option>
+                            <option value="base_oven">Dolna pod piekarnik</option>
                             <option value="tall">Szafka wysoka</option>
                         </select>
                     </label>
@@ -791,13 +800,6 @@ def app_status_page() -> HTMLResponse:
                             <option value="drawers">Szuflady</option>
                         </select>
                     </label>
-                    <label>Szablon szafki
-                        <select id="manual_cabinet_template">
-                            <option value="standard">Zwykła</option>
-                            <option value="sink">Pod zlew</option>
-                            <option value="oven_under_counter">Pod piekarnik podblatowy</option>
-                        </select>
-                    </label>
                     <label>Ilość frontów<input id="manual_front_count" type="number" min="0" value="0" /></label>
                     <label>Wysokość szafki dolnej [mm]<input id="manual_base_height" type="number" min="1" value="820" /></label>
                     <label>Wysokość nóg [mm]<input id="manual_leg_height" type="number" min="0" value="100" /></label>
@@ -813,15 +815,22 @@ def app_status_page() -> HTMLResponse:
                     <label>Cofnięcie kanalika od tyłu [mm]<input id="manual_back_groove_offset" type="number" min="0" value="10" /></label>
                     <label>Wpuszczenie pleców w kanalik [mm]<input id="manual_back_groove_insert" type="number" min="0" value="10" /></label>
                 </div>
-                <div class="subsection">
-                    <h3>Parametry szablonu</h3>
+                <div class="subsection" id="sink-params-section" style="display:none;">
+                    <h3>Parametry szafki pod zlew</h3>
+                    <p>Szafka pod zlew nie ma pełnych pleców. U góry generowane są pionowe listwy/trawersy, a na dole niski tylny panel między bokami.</p>
                     <div class="form-grid">
-                        <label>Wysokość dolnych pleców pod zlew [mm]<input id="manual_sink_bottom_back_height" type="number" min="1" value="200" /></label>
-                        <label>Szerokość pionowych listew pod zlew [mm]<input id="manual_sink_vertical_traverse_width" type="number" min="1" value="100" /></label>
-                        <label>Wysokość otwarcia na piekarnik [mm]<input id="manual_oven_opening_height" type="number" min="1" value="600" /></label>
-                        <label>Wysokość dolnej szuflady [mm]<input id="manual_oven_drawer_height" type="number" min="1" value="140" /></label>
-                        <label>Szerokość tylnego trawersu piekarnika [mm]<input id="manual_oven_back_traverse_width" type="number" min="1" value="100" /></label>
+                        <label>Wysokość dolnego tylnego panelu [mm]<input id="manual_sink_bottom_back_height" type="number" min="1" value="200" /></label>
+                        <label>Szerokość pionowych listew górnych [mm]<input id="manual_sink_vertical_traverse_width" type="number" min="1" value="100" /></label>
                     </div>
+                </div>
+                <div class="subsection" id="oven-params-section" style="display:none;">
+                    <h3>Parametry szafki pod piekarnik</h3>
+                    <div class="form-grid">
+                        <label>Wysokość otwarcia na piekarnik [mm]<input id="manual_oven_opening_height" type="number" min="1" value="600" /></label>
+                        <label>Szerokość tylnego trawersu [mm]<input id="manual_oven_back_traverse_width" type="number" min="1" value="100" /></label>
+                        <label>Wynikowa wysokość dolnej szuflady [mm]<input id="manual_oven_drawer_height" type="number" value="202" readonly /></label>
+                    </div>
+                    <div id="oven-drawer-warning" class="hint">Wysokość dolnej szuflady musi być większa od 0 mm.</div>
                 </div>
                 <div id="side-floor-hint" class="hint">Wieniec dolny jest wymuszony między bokami tylko wtedy, gdy oba boki schodzą do podłogi.</div>
                 <div id="edit-mode-info" class="hint" style="display:none;background:#eff6ff;border-color:#93c5fd;color:#1d4ed8;"></div>
@@ -837,7 +846,7 @@ def app_status_page() -> HTMLResponse:
                     <table>
                         <thead>
                             <tr>
-                                <th>Numer</th><th>Typ</th><th>Szablon</th><th>Szerokość</th><th>Wysokość</th><th>Wysokość nóg</th><th>Pozycja</th><th>Zawartość</th><th>Fronty</th><th>Nogi</th><th>Bok do podłogi</th><th>Wieniec dolny</th><th>Wieniec górny</th><th>Grubość płyty</th><th>Plecy</th><th>Akcje</th>
+                                <th>Numer</th><th>Typ</th><th>Szerokość</th><th>Wysokość</th><th>Wysokość nóg</th><th>Pozycja</th><th>Zawartość</th><th>Fronty</th><th>Nogi</th><th>Bok do podłogi</th><th>Wieniec dolny</th><th>Wieniec górny</th><th>Grubość płyty</th><th>Plecy</th><th>Akcje</th>
                             </tr>
                         </thead>
                         <tbody id="manual-modules-body"></tbody>
@@ -863,7 +872,7 @@ def app_status_page() -> HTMLResponse:
                     <table>
                         <thead>
                             <tr>
-                                <th>Numer</th><th>Typ</th><th>Szablon</th><th>Szerokość</th><th>Wysokość</th><th>Wysokość nóg</th><th>Pozycja</th><th>Zawartość</th><th>Fronty</th><th>Plecy</th>
+                                <th>Numer</th><th>Typ</th><th>Szerokość</th><th>Wysokość</th><th>Wysokość nóg</th><th>Pozycja</th><th>Zawartość</th><th>Fronty</th><th>Plecy</th>
                             </tr>
                         </thead>
                         <tbody id="modules-body"></tbody>
@@ -898,7 +907,13 @@ def app_status_page() -> HTMLResponse:
             const manualSideToFloor = document.getElementById("manual_side_to_floor");
             const manualBottomRailMode = document.getElementById("manual_bottom_rail_mode");
             const manualCabinetType = document.getElementById("manual_cabinet_type");
-            const manualCabinetTemplate = document.getElementById("manual_cabinet_template");
+            const sinkParamsSection = document.getElementById("sink-params-section");
+            const ovenParamsSection = document.getElementById("oven-params-section");
+            const ovenDrawerWarning = document.getElementById("oven-drawer-warning");
+            const manualBaseHeightInput = document.getElementById("manual_base_height");
+            const manualBoardThicknessInput = document.getElementById("manual_board_thickness");
+            const manualOvenOpeningHeightInput = document.getElementById("manual_oven_opening_height");
+            const manualOvenDrawerHeightInput = document.getElementById("manual_oven_drawer_height");
             const addModuleBtn = document.getElementById("add-module-btn");
             const editModeInfo = document.getElementById("edit-mode-info");
             const sideFloorHint = document.getElementById("side-floor-hint");
@@ -909,7 +924,13 @@ def app_status_page() -> HTMLResponse:
             const manualBackThicknessInput = document.getElementById("manual_back_thickness");
             const manualModules = [];
             let editingModuleIndex = null;
-            const cabinetTypeLabels = { base: "Dolna", tall: "Wysoka" };
+            const cabinetTypeLabels = {
+                base: "Dolna zwykła",
+                base_standard: "Dolna zwykła",
+                base_sink: "Dolna pod zlew",
+                base_oven: "Dolna pod piekarnik",
+                tall: "Wysoka"
+            };
             const positionLabels = {
                 normal: "Normalna",
                 end_left: "Końcowa lewa",
@@ -923,11 +944,6 @@ def app_status_page() -> HTMLResponse:
             const topModeLabels = { full_top_on_sides: "Na bokach", full_top_between_sides: "Między bokami", traverses: "Trawersy" };
             const frontTypeLabels = { none: "Brak", doors: "Drzwiczki", drawers: "Szuflady" };
             const backTypeLabels = { overlay: "Nakładane", groove: "Wpuszczane w kanalik", between: "Między bokami" };
-            const cabinetTemplateLabels = {
-                standard: "Zwykła",
-                sink: "Pod zlew",
-                oven_under_counter: "Pod piekarnik podblatowy"
-            };
             const partTypeLabels = {
                 side_left: "Bok lewy",
                 side_right: "Bok prawy",
@@ -1007,6 +1023,27 @@ def app_status_page() -> HTMLResponse:
                 }
             }
 
+            function recalculateOvenDrawerHeight() {
+                const baseHeight = Number(manualBaseHeightInput.value);
+                const openingHeight = Number(manualOvenOpeningHeightInput.value);
+                const boardThickness = Number(manualBoardThicknessInput.value);
+                const drawerHeight = baseHeight - openingHeight - boardThickness;
+                manualOvenDrawerHeightInput.value = Number.isFinite(drawerHeight) ? String(drawerHeight) : "";
+                ovenDrawerWarning.style.display = drawerHeight <= 0 ? "block" : "none";
+                return drawerHeight;
+            }
+
+            function updateCabinetTypeSections() {
+                const cabinetType = manualCabinetType.value;
+                sinkParamsSection.style.display = cabinetType === "base_sink" ? "block" : "none";
+                ovenParamsSection.style.display = cabinetType === "base_oven" ? "block" : "none";
+                if (cabinetType === "base_oven") {
+                    recalculateOvenDrawerHeight();
+                } else {
+                    ovenDrawerWarning.style.display = "none";
+                }
+            }
+
             function updateManualSummary() {
                 const projectWidth = Number(projectWidthInput.value) || 0;
                 const totalManualWidth = manualModules.reduce((acc, module) => acc + module.width, 0);
@@ -1032,7 +1069,6 @@ def app_status_page() -> HTMLResponse:
                     row.innerHTML = `
                         <td>${index + 1}</td>
                         <td>${cabinetTypeLabels[module.cabinet_type] || module.cabinet_type}</td>
-                        <td>${cabinetTemplateLabels[module.cabinet_template] || module.cabinet_template}</td>
                         <td>${module.width}</td>
                         <td>${module.base_height}</td>
                         <td>${module.leg_height}</td>
@@ -1099,8 +1135,7 @@ def app_status_page() -> HTMLResponse:
                     const row = document.createElement("tr");
                     row.innerHTML = `
                         <td>${module.module_id}</td>
-                        <td>${moduleTypeLabel}</td>
-                        <td>${cabinetTemplateLabels[module.cabinet_template] || module.cabinet_template}</td>
+                        <td>${cabinetTypeLabels[module.cabinet_type] || moduleTypeLabel}</td>
                         <td>${module.width}</td>
                         <td>${module.height}</td>
                         <td>${module.leg_height}</td>
@@ -1163,6 +1198,7 @@ def app_status_page() -> HTMLResponse:
                 const ovenOpeningHeight = Number(document.getElementById("manual_oven_opening_height").value);
                 const ovenDrawerHeight = Number(document.getElementById("manual_oven_drawer_height").value);
                 const ovenBackTraverseWidth = Number(document.getElementById("manual_oven_back_traverse_width").value);
+                const cabinetType = manualCabinetType.value;
                 if (!Number.isInteger(baseHeight) || baseHeight <= 0) {
                     errorBox.textContent = "Wysokość szafki dolnej musi być liczbą całkowitą > 0";
                     return null;
@@ -1187,34 +1223,38 @@ def app_status_page() -> HTMLResponse:
                     errorBox.textContent = "Wpuszczenie pleców musi być liczbą całkowitą >= 0";
                     return null;
                 }
-                if (!Number.isInteger(sinkBottomBackHeight) || sinkBottomBackHeight <= 0) {
-                    errorBox.textContent = "Wysokość dolnych pleców pod zlew musi być liczbą całkowitą > 0";
-                    return null;
+                if (cabinetType === "base_sink") {
+                    if (!Number.isInteger(sinkBottomBackHeight) || sinkBottomBackHeight <= 0) {
+                        errorBox.textContent = "Wysokość dolnego tylnego panelu musi być liczbą całkowitą > 0";
+                        return null;
+                    }
+                    if (!Number.isInteger(sinkVerticalTraverseWidth) || sinkVerticalTraverseWidth <= 0) {
+                        errorBox.textContent = "Szerokość pionowych listew górnych musi być liczbą całkowitą > 0";
+                        return null;
+                    }
                 }
-                if (!Number.isInteger(sinkVerticalTraverseWidth) || sinkVerticalTraverseWidth <= 0) {
-                    errorBox.textContent = "Szerokość pionowych listew pod zlew musi być liczbą całkowitą > 0";
-                    return null;
-                }
-                if (!Number.isInteger(ovenOpeningHeight) || ovenOpeningHeight <= 0) {
-                    errorBox.textContent = "Wysokość otwarcia na piekarnik musi być liczbą całkowitą > 0";
-                    return null;
-                }
-                if (!Number.isInteger(ovenDrawerHeight) || ovenDrawerHeight <= 0) {
-                    errorBox.textContent = "Wysokość dolnej szuflady musi być liczbą całkowitą > 0";
-                    return null;
-                }
-                if (!Number.isInteger(ovenBackTraverseWidth) || ovenBackTraverseWidth <= 0) {
-                    errorBox.textContent = "Szerokość tylnego trawersu piekarnika musi być liczbą całkowitą > 0";
-                    return null;
+                if (cabinetType === "base_oven") {
+                    if (!Number.isInteger(ovenOpeningHeight) || ovenOpeningHeight <= 0) {
+                        errorBox.textContent = "Wysokość otwarcia na piekarnik musi być liczbą całkowitą > 0";
+                        return null;
+                    }
+                    if (!Number.isInteger(ovenBackTraverseWidth) || ovenBackTraverseWidth <= 0) {
+                        errorBox.textContent = "Szerokość tylnego trawersu musi być liczbą całkowitą > 0";
+                        return null;
+                    }
+                    if (!Number.isInteger(ovenDrawerHeight) || ovenDrawerHeight <= 0) {
+                        errorBox.textContent = "Wynikowa wysokość dolnej szuflady musi być > 0";
+                        return null;
+                    }
                 }
 
                 const sideToFloor = manualSideToFloor.value;
                 const bottomRailMode = sideToFloor === "both" ? "bottom_between_sides" : manualBottomRailMode.value;
 
                 errorBox.textContent = "";
-                return {
+                const module = {
                     width,
-                    cabinet_type: manualCabinetType.value,
+                    cabinet_type: cabinetType,
                     position: document.getElementById("manual_position").value,
                     content: document.getElementById("manual_content").value,
                     has_legs: document.getElementById("manual_has_legs").value === "true",
@@ -1223,12 +1263,6 @@ def app_status_page() -> HTMLResponse:
                     top_mode: document.getElementById("manual_top_mode").value,
                     front_type: document.getElementById("manual_front_type").value,
                     front_count: frontCount,
-                    cabinet_template: manualCabinetTemplate.value,
-                    sink_bottom_back_height: sinkBottomBackHeight,
-                    sink_vertical_traverse_width: sinkVerticalTraverseWidth,
-                    oven_opening_height: ovenOpeningHeight,
-                    oven_drawer_height: ovenDrawerHeight,
-                    oven_back_traverse_width: ovenBackTraverseWidth,
                     base_height: baseHeight,
                     leg_height: legHeight,
                     board_thickness: boardThickness,
@@ -1237,6 +1271,16 @@ def app_status_page() -> HTMLResponse:
                     back_groove_offset: backGrooveOffset,
                     back_groove_insert: backGrooveInsert
                 };
+                if (cabinetType === "base_sink") {
+                    module.sink_bottom_back_height = sinkBottomBackHeight;
+                    module.sink_vertical_traverse_width = sinkVerticalTraverseWidth;
+                }
+                if (cabinetType === "base_oven") {
+                    module.oven_opening_height = ovenOpeningHeight;
+                    module.oven_drawer_height = ovenDrawerHeight;
+                    module.oven_back_traverse_width = ovenBackTraverseWidth;
+                }
+                return module;
             }
 
             function fillManualForm(module) {
@@ -1250,11 +1294,10 @@ def app_status_page() -> HTMLResponse:
                 document.getElementById("manual_top_mode").value = module.top_mode;
                 document.getElementById("manual_front_type").value = module.front_type;
                 document.getElementById("manual_front_count").value = module.front_count;
-                manualCabinetTemplate.value = module.cabinet_template || "standard";
                 document.getElementById("manual_sink_bottom_back_height").value = module.sink_bottom_back_height ?? 200;
                 document.getElementById("manual_sink_vertical_traverse_width").value = module.sink_vertical_traverse_width ?? 100;
                 document.getElementById("manual_oven_opening_height").value = module.oven_opening_height ?? 600;
-                document.getElementById("manual_oven_drawer_height").value = module.oven_drawer_height ?? 140;
+                document.getElementById("manual_oven_drawer_height").value = module.oven_drawer_height ?? 0;
                 document.getElementById("manual_oven_back_traverse_width").value = module.oven_back_traverse_width ?? 100;
                 document.getElementById("manual_base_height").value = module.base_height;
                 document.getElementById("manual_leg_height").value = module.leg_height;
@@ -1265,6 +1308,7 @@ def app_status_page() -> HTMLResponse:
                 document.getElementById("manual_back_groove_insert").value = module.back_groove_insert;
                 updateFloorHint();
                 updateManualBackTypeState();
+                updateCabinetTypeSections();
             }
 
             function updateEditModeInfo() {
@@ -1319,10 +1363,15 @@ def app_status_page() -> HTMLResponse:
             });
             projectWidthInput.addEventListener("input", updateManualSummary);
             manualSideToFloor.addEventListener("change", updateFloorHint);
+            manualCabinetType.addEventListener("change", updateCabinetTypeSections);
+            manualBaseHeightInput.addEventListener("input", recalculateOvenDrawerHeight);
+            manualBoardThicknessInput.addEventListener("input", recalculateOvenDrawerHeight);
+            manualOvenOpeningHeightInput.addEventListener("input", recalculateOvenDrawerHeight);
             backTypeSelect.addEventListener("change", updateBackTypeDescription);
             manualBackTypeSelect.addEventListener("change", updateManualBackTypeState);
             updateManualSummary();
             updateFloorHint();
+            updateCabinetTypeSections();
             updateBackTypeDescription();
             updateManualBackTypeState();
             updateEditModeInfo();
@@ -1413,11 +1462,16 @@ def create_project_from_manual(payload: ManualProjectRequest) -> ManualProjectRe
         parts = []
         for idx, module in enumerate(payload.manual_modules, start=1):
             module_id = f"M{idx}"
-            _validate_special_template_constraints(module)
+            _validate_cabinet_type_constraints(module)
             effective_tech = _effective_module_technology(module, module_id, warnings)
             has_legs, side_to_floor, bottom_rail_mode, legacy_base_construction = _normalize_module_config(module)
-            module_type = "base_cabinet" if module.cabinet_type == "base" else "tall_cabinet"
-            module_height = int(effective_tech["base_height"]) if module.cabinet_type == "base" else payload.height
+            normalized_cabinet_type = _normalize_cabinet_type(module.cabinet_type)
+            module_type = "base_cabinet" if normalized_cabinet_type != "tall" else "tall_cabinet"
+            module_height = int(effective_tech["base_height"]) if normalized_cabinet_type != "tall" else payload.height
+            computed_oven_drawer_height = module.oven_drawer_height
+            if normalized_cabinet_type == "base_oven":
+                if computed_oven_drawer_height <= 0:
+                    computed_oven_drawer_height = module.base_height - module.oven_opening_height - module.board_thickness
             response_module = ModuleResponse(
                 module_id=module_id,
                 module_type=module_type,
@@ -1433,11 +1487,11 @@ def create_project_from_manual(payload: ManualProjectRequest) -> ManualProjectRe
                 top_mode=module.top_mode,
                 front_type=module.front_type,
                 front_count=module.front_count,
-                cabinet_template=module.cabinet_template,
+                cabinet_type=normalized_cabinet_type,
                 sink_bottom_back_height=module.sink_bottom_back_height,
                 sink_vertical_traverse_width=module.sink_vertical_traverse_width,
                 oven_opening_height=module.oven_opening_height,
-                oven_drawer_height=module.oven_drawer_height,
+                oven_drawer_height=computed_oven_drawer_height,
                 oven_back_traverse_width=module.oven_back_traverse_width,
                 base_height=int(effective_tech["base_height"]),
                 leg_height=int(effective_tech["leg_height"]),
