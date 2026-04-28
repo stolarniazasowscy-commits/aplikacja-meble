@@ -72,3 +72,92 @@
     border: 1px solid #64748b;
     border-radius: 4px;
 }
+
+#module-preview {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 8px;
+}
+
+.module-preview-card {
+    background: #f8fafc;
+    border: 1px solid #dbe2ea;
+    border-radius: 10px;
+    padding: 10px;
+}
+
+.module-preview-card h3 {
+    margin: 0 0 8px;
+    font-size: 14px;
+}
+
+.module-preview-note {
+    margin: 10px 0 0;
+    color: #475569;
+    font-size: 12px;
+    font-style: italic;
+}
+
+.module-preview-svg {
+    display: block;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+}
+
+.mp-outline {
+    fill: none;
+    stroke: #334155;
+    stroke-width: 1.5;
+}
+
+.mp-board {
+    fill: #f2e3c9;
+    stroke: #3f3f46;
+    stroke-width: 1;
+}
+
+.mp-back {
+    fill: #d1d5db;
+    stroke: #4b5563;
+    stroke-width: 1;
+}
+
+.mp-front {
+    fill: #bfdbfe;
+    stroke: #3b82f6;
+    stroke-width: 1;
+    fill-opacity: 0.55;
+}
+
+.mp-inner {
+    fill: #e9d6b4;
+    stroke: #52525b;
+    stroke-width: 1;
+}
+
+.mp-legs {
+    fill: #4b5563;
+}
+
+.mp-line {
+    stroke: #1f2937;
+    stroke-width: 1;
+}
+
+.mp-groove {
+    fill: #94a3b8;
+}
+
+.mp-caption {
+    fill: #334155;
+    font-size: 12px;
+    font-family: Arial, sans-serif;
+}
+
+@media (max-width: 960px) {
+    #module-preview {
+        grid-template-columns: 1fr;
+    }
+}

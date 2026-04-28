@@ -842,6 +842,24 @@ def app_status_page() -> HTMLResponse:
                     <button class="btn-primary" type="button" id="add-module-btn">Dodaj moduł</button>
                     <button class="btn-danger" type="button" id="clear-modules-btn">Wyczyść moduły</button>
                 </div>
+                <div class="subsection">
+                    <h3>Podgląd aktualnego modułu</h3>
+                    <div id="module-preview">
+                        <div class="module-preview-card">
+                            <h3>Widok z przodu</h3>
+                            <div id="module-front-view"></div>
+                        </div>
+                        <div class="module-preview-card">
+                            <h3>Widok z góry</h3>
+                            <div id="module-top-view"></div>
+                        </div>
+                        <div class="module-preview-card">
+                            <h3>Widok z boku</h3>
+                            <div id="module-side-view"></div>
+                        </div>
+                    </div>
+                    <p class="module-preview-note">Podgląd schematyczny – nie jest rysunkiem produkcyjnym.</p>
+                </div>
             </section>
 
             <section class="card">
@@ -1321,6 +1339,9 @@ def app_status_page() -> HTMLResponse:
                 updateFloorHint();
                 updateManualBackTypeState();
                 updateCabinetTypeSections();
+                if (typeof renderCurrentModulePreview === "function") {
+                    renderCurrentModulePreview();
+                }
             }
 
             function updateEditModeInfo() {
@@ -1348,6 +1369,38 @@ def app_status_page() -> HTMLResponse:
                 updateEditModeInfo();
             }
 
+            function bindManualPreviewListeners() {
+                const previewFields = [
+                    { id: "manual_width", event: "input" },
+                    { id: "manual_cabinet_type", event: "change" },
+                    { id: "manual_base_height", event: "input" },
+                    { id: "manual_leg_height", event: "input" },
+                    { id: "depth", event: "input" },
+                    { id: "manual_board_thickness", event: "input" },
+                    { id: "manual_back_thickness", event: "input" },
+                    { id: "manual_back_type", event: "change" },
+                    { id: "manual_has_legs", event: "change" },
+                    { id: "manual_side_to_floor", event: "change" },
+                    { id: "manual_bottom_rail_mode", event: "change" },
+                    { id: "manual_top_mode", event: "change" },
+                    { id: "manual_content", event: "change" },
+                    { id: "manual_front_type", event: "change" },
+                    { id: "manual_front_count", event: "input" }
+                ];
+
+                previewFields.forEach(({ id, event }) => {
+                    const field = document.getElementById(id);
+                    if (!field) {
+                        return;
+                    }
+                    field.addEventListener(event, () => {
+                        if (typeof renderCurrentModulePreview === "function") {
+                            renderCurrentModulePreview();
+                        }
+                    });
+                });
+            }
+
             function addOrUpdateManualModule() {
                 const moduleData = getManualModuleFromForm();
                 if (!moduleData) {
@@ -1372,6 +1425,9 @@ def app_status_page() -> HTMLResponse:
                 resetEditMode();
                 renderManualModules();
                 updateManualSummary();
+                if (typeof renderCurrentModulePreview === "function") {
+                    renderCurrentModulePreview();
+                }
             });
             projectWidthInput.addEventListener("input", updateManualSummary);
             manualSideToFloor.addEventListener("change", updateFloorHint);
@@ -1381,12 +1437,16 @@ def app_status_page() -> HTMLResponse:
             manualOvenOpeningHeightInput.addEventListener("input", recalculateOvenDrawerHeight);
             backTypeSelect.addEventListener("change", updateBackTypeDescription);
             manualBackTypeSelect.addEventListener("change", updateManualBackTypeState);
+            bindManualPreviewListeners();
             updateManualSummary();
             updateFloorHint();
             updateCabinetTypeSections();
             updateBackTypeDescription();
             updateManualBackTypeState();
             updateEditModeInfo();
+            if (typeof renderCurrentModulePreview === "function") {
+                renderCurrentModulePreview();
+            }
         </script>
     </body>
     </html>
