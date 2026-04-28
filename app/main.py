@@ -692,6 +692,7 @@ def app_status_page() -> HTMLResponse:
                     <label>Wpuszczenie pleców w kanalik [mm]<input id="manual_back_groove_insert" type="number" min="0" value="10" /></label>
                 </div>
                 <div id="side-floor-hint" class="hint">Wieniec dolny jest wymuszony między bokami tylko wtedy, gdy oba boki schodzą do podłogi.</div>
+                <div id="edit-mode-info" class="hint" style="display:none;background:#eff6ff;border-color:#93c5fd;color:#1d4ed8;"></div>
                 <div class="button-row">
                     <button class="btn-primary" type="button" id="add-module-btn">Dodaj moduł</button>
                     <button class="btn-danger" type="button" id="clear-modules-btn">Wyczyść moduły</button>
@@ -704,7 +705,7 @@ def app_status_page() -> HTMLResponse:
                     <table>
                         <thead>
                             <tr>
-                                <th>Nr</th><th>Szerokość</th><th>Typ szafki</th><th>Pozycja</th><th>Zawartość</th><th>Nogi</th><th>Bok do podłogi</th><th>Wieniec dolny</th><th>Wieniec górny</th><th>Front</th><th>Liczba frontów</th><th>Wysokość szafki dolnej</th><th>Wysokość nóg</th><th>Grubość płyty</th><th>Grubość pleców</th><th>Rodzaj pleców</th><th>Cofnięcie kanalika</th><th>Wpuszczenie pleców</th><th>Akcja</th>
+                                <th>Numer</th><th>Typ</th><th>Szerokość</th><th>Wysokość</th><th>Wysokość nóg</th><th>Pozycja</th><th>Zawartość</th><th>Fronty</th><th>Nogi</th><th>Bok do podłogi</th><th>Wieniec dolny</th><th>Wieniec górny</th><th>Grubość płyty</th><th>Plecy</th><th>Akcje</th>
                             </tr>
                         </thead>
                         <tbody id="manual-modules-body"></tbody>
@@ -730,7 +731,7 @@ def app_status_page() -> HTMLResponse:
                     <table>
                         <thead>
                             <tr>
-                                <th>Nr</th><th>Szerokość</th><th>Typ</th><th>Pozycja</th><th>Zawartość</th><th>base_height</th><th>leg_height</th><th>board_thickness</th><th>back_thickness</th><th>back_type</th><th>back_groove_offset</th><th>back_groove_insert</th>
+                                <th>Numer</th><th>Typ</th><th>Szerokość</th><th>Wysokość</th><th>Wysokość nóg</th><th>Pozycja</th><th>Zawartość</th><th>Fronty</th><th>Plecy</th>
                             </tr>
                         </thead>
                         <tbody id="modules-body"></tbody>
@@ -764,6 +765,9 @@ def app_status_page() -> HTMLResponse:
             const partsBody = document.getElementById("parts-body");
             const manualSideToFloor = document.getElementById("manual_side_to_floor");
             const manualBottomRailMode = document.getElementById("manual_bottom_rail_mode");
+            const manualCabinetType = document.getElementById("manual_cabinet_type");
+            const addModuleBtn = document.getElementById("add-module-btn");
+            const editModeInfo = document.getElementById("edit-mode-info");
             const sideFloorHint = document.getElementById("side-floor-hint");
             const backTypeSelect = document.getElementById("back_type");
             const backTypeDescription = document.getElementById("back-type-description");
@@ -771,7 +775,8 @@ def app_status_page() -> HTMLResponse:
             const manualBackTypeSelect = document.getElementById("manual_back_type");
             const manualBackThicknessInput = document.getElementById("manual_back_thickness");
             const manualModules = [];
-            const cabinetTypeLabels = { base: "Szafka dolna", tall: "Szafka wysoka" };
+            let editingModuleIndex = null;
+            const cabinetTypeLabels = { base: "Dolna", tall: "Wysoka" };
             const positionLabels = {
                 normal: "Normalna",
                 end_left: "Końcowa lewa",
@@ -880,13 +885,49 @@ def app_status_page() -> HTMLResponse:
                 manualModules.forEach((module, index) => {
                     const row = document.createElement("tr");
                     row.innerHTML = `
-                        <td>${index + 1}</td><td>${module.width}</td><td>${cabinetTypeLabels[module.cabinet_type] || module.cabinet_type}</td><td>${positionLabels[module.position] || module.position}</td><td>${contentLabels[module.content] || module.content}</td><td>${module.has_legs ? "Tak" : "Nie"}</td><td>${sideToFloorLabels[module.side_to_floor] || module.side_to_floor}</td><td>${bottomRailLabels[module.bottom_rail_mode] || module.bottom_rail_mode}</td><td>${topModeLabels[module.top_mode] || module.top_mode}</td><td>${frontTypeLabels[module.front_type] || module.front_type}</td><td>${module.front_count}</td><td>${module.base_height}</td><td>${module.leg_height}</td><td>${module.board_thickness}</td><td>${module.back_thickness}</td><td>${backTypeLabels[module.back_type] || module.back_type}</td><td>${module.back_groove_offset}</td><td>${module.back_groove_insert}</td>
-                        <td><button class="btn-danger" type="button" data-index="${index}">Usuń</button></td>
+                        <td>${index + 1}</td>
+                        <td>${cabinetTypeLabels[module.cabinet_type] || module.cabinet_type}</td>
+                        <td>${module.width}</td>
+                        <td>${module.base_height}</td>
+                        <td>${module.leg_height}</td>
+                        <td>${positionLabels[module.position] || module.position}</td>
+                        <td>${contentLabels[module.content] || module.content}</td>
+                        <td>${frontTypeLabels[module.front_type] || module.front_type} (${module.front_count})</td>
+                        <td>${module.has_legs ? "Tak" : "Nie"}</td>
+                        <td>${sideToFloorLabels[module.side_to_floor] || module.side_to_floor}</td>
+                        <td>${bottomRailLabels[module.bottom_rail_mode] || module.bottom_rail_mode}</td>
+                        <td>${topModeLabels[module.top_mode] || module.top_mode}</td>
+                        <td>${module.board_thickness}</td>
+                        <td>${backTypeLabels[module.back_type] || module.back_type} (${module.back_thickness} mm)</td>
+                        <td>
+                            <button class="btn-secondary" type="button" data-action="edit" data-index="${index}">Edytuj</button>
+                            <button class="btn-primary" type="button" data-action="copy" data-index="${index}">Kopiuj</button>
+                            <button class="btn-danger" type="button" data-action="delete" data-index="${index}">Usuń</button>
+                        </td>
                     `;
-                    row.querySelector("button").addEventListener("click", () => {
-                        manualModules.splice(index, 1);
-                        renderManualModules();
-                        updateManualSummary();
+                    row.querySelectorAll("button").forEach((button) => {
+                        button.addEventListener("click", () => {
+                            const action = button.dataset.action;
+                            if (action === "edit") {
+                                loadModuleIntoForm(index);
+                                return;
+                            }
+                            if (action === "copy") {
+                                manualModules.push({ ...module });
+                                renderManualModules();
+                                updateManualSummary();
+                                return;
+                            }
+                            if (editingModuleIndex === index) {
+                                resetEditMode();
+                            } else if (editingModuleIndex !== null && index < editingModuleIndex) {
+                                editingModuleIndex -= 1;
+                                updateEditModeInfo();
+                            }
+                            manualModules.splice(index, 1);
+                            renderManualModules();
+                            updateManualSummary();
+                        });
                     });
                     manualModulesBody.appendChild(row);
                 });
@@ -904,9 +945,22 @@ def app_status_page() -> HTMLResponse:
             function renderModules(modules) {
                 modulesBody.innerHTML = "";
                 for (const module of modules) {
+                    const moduleTypeLabel = module.module_type === "base_cabinet"
+                        ? cabinetTypeLabels.base
+                        : module.module_type === "tall_cabinet"
+                            ? cabinetTypeLabels.tall
+                            : module.module_type;
                     const row = document.createElement("tr");
                     row.innerHTML = `
-                        <td>${module.module_id}</td><td>${module.width}</td><td>${cabinetTypeLabels[module.module_type === "base_cabinet" ? "base" : "tall"]}</td><td>${positionLabels[module.position] || module.position}</td><td>${contentLabels[module.content] || module.content}</td><td>${module.base_height}</td><td>${module.leg_height}</td><td>${module.board_thickness}</td><td>${module.back_thickness}</td><td>${module.back_type}</td><td>${module.back_groove_offset}</td><td>${module.back_groove_insert}</td>
+                        <td>${module.module_id}</td>
+                        <td>${moduleTypeLabel}</td>
+                        <td>${module.width}</td>
+                        <td>${module.height}</td>
+                        <td>${module.leg_height}</td>
+                        <td>${positionLabels[module.position] || module.position}</td>
+                        <td>${contentLabels[module.content] || module.content}</td>
+                        <td>${frontTypeLabels[module.front_type] || module.front_type} (${module.front_count})</td>
+                        <td>${backTypeLabels[module.back_type] || module.back_type} (${module.back_thickness} mm)</td>
                     `;
                     modulesBody.appendChild(row);
                 }
@@ -940,16 +994,16 @@ def app_status_page() -> HTMLResponse:
                 }
             }
 
-            function addManualModule() {
+            function getManualModuleFromForm() {
                 const width = Number(document.getElementById("manual_width").value);
                 if (!Number.isInteger(width) || width <= 0) {
                     errorBox.textContent = "Szerokość modułu musi być dodatnią liczbą całkowitą";
-                    return;
+                    return null;
                 }
                 const frontCount = Number(document.getElementById("manual_front_count").value);
                 if (!Number.isInteger(frontCount) || frontCount < 0) {
                     errorBox.textContent = "Ilość frontów musi być liczbą całkowitą >= 0";
-                    return;
+                    return null;
                 }
                 const baseHeight = Number(document.getElementById("manual_base_height").value);
                 const legHeight = Number(document.getElementById("manual_leg_height").value);
@@ -959,36 +1013,36 @@ def app_status_page() -> HTMLResponse:
                 const backGrooveInsert = Number(document.getElementById("manual_back_groove_insert").value);
                 if (!Number.isInteger(baseHeight) || baseHeight <= 0) {
                     errorBox.textContent = "Wysokość szafki dolnej musi być liczbą całkowitą > 0";
-                    return;
+                    return null;
                 }
                 if (!Number.isInteger(legHeight) || legHeight < 0) {
                     errorBox.textContent = "Wysokość nóg musi być liczbą całkowitą >= 0";
-                    return;
+                    return null;
                 }
                 if (!Number.isInteger(boardThickness) || boardThickness <= 0) {
                     errorBox.textContent = "Grubość płyty musi być liczbą całkowitą > 0";
-                    return;
+                    return null;
                 }
                 if (!Number.isInteger(backThickness) || backThickness <= 0) {
                     errorBox.textContent = "Grubość pleców musi być liczbą całkowitą > 0";
-                    return;
+                    return null;
                 }
                 if (!Number.isInteger(backGrooveOffset) || backGrooveOffset < 0) {
                     errorBox.textContent = "Cofnięcie kanalika musi być liczbą całkowitą >= 0";
-                    return;
+                    return null;
                 }
                 if (!Number.isInteger(backGrooveInsert) || backGrooveInsert < 0) {
                     errorBox.textContent = "Wpuszczenie pleców musi być liczbą całkowitą >= 0";
-                    return;
+                    return null;
                 }
 
                 const sideToFloor = manualSideToFloor.value;
                 const bottomRailMode = sideToFloor === "both" ? "bottom_between_sides" : manualBottomRailMode.value;
 
                 errorBox.textContent = "";
-                manualModules.push({
+                return {
                     width,
-                    cabinet_type: document.getElementById("manual_cabinet_type").value,
+                    cabinet_type: manualCabinetType.value,
                     position: document.getElementById("manual_position").value,
                     content: document.getElementById("manual_content").value,
                     has_legs: document.getElementById("manual_has_legs").value === "true",
@@ -1004,16 +1058,78 @@ def app_status_page() -> HTMLResponse:
                     back_type: manualBackTypeSelect.value,
                     back_groove_offset: backGrooveOffset,
                     back_groove_insert: backGrooveInsert
-                });
+                };
+            }
+
+            function fillManualForm(module) {
+                document.getElementById("manual_width").value = module.width;
+                manualCabinetType.value = module.cabinet_type;
+                document.getElementById("manual_position").value = module.position;
+                document.getElementById("manual_content").value = module.content;
+                document.getElementById("manual_has_legs").value = String(module.has_legs);
+                manualSideToFloor.value = module.side_to_floor;
+                manualBottomRailMode.value = module.bottom_rail_mode;
+                document.getElementById("manual_top_mode").value = module.top_mode;
+                document.getElementById("manual_front_type").value = module.front_type;
+                document.getElementById("manual_front_count").value = module.front_count;
+                document.getElementById("manual_base_height").value = module.base_height;
+                document.getElementById("manual_leg_height").value = module.leg_height;
+                document.getElementById("manual_board_thickness").value = module.board_thickness;
+                manualBackThicknessInput.value = module.back_thickness;
+                manualBackTypeSelect.value = module.back_type;
+                document.getElementById("manual_back_groove_offset").value = module.back_groove_offset;
+                document.getElementById("manual_back_groove_insert").value = module.back_groove_insert;
+                updateFloorHint();
+                updateManualBackTypeState();
+            }
+
+            function updateEditModeInfo() {
+                if (editingModuleIndex === null) {
+                    editModeInfo.style.display = "none";
+                    editModeInfo.textContent = "";
+                    addModuleBtn.textContent = "Dodaj moduł";
+                    manualCabinetType.disabled = false;
+                    return;
+                }
+                addModuleBtn.textContent = "Zapisz zmiany";
+                manualCabinetType.disabled = true;
+                editModeInfo.style.display = "block";
+                editModeInfo.textContent = `Edytujesz moduł nr ${editingModuleIndex + 1}`;
+            }
+
+            function loadModuleIntoForm(index) {
+                editingModuleIndex = index;
+                fillManualForm(manualModules[index]);
+                updateEditModeInfo();
+            }
+
+            function resetEditMode() {
+                editingModuleIndex = null;
+                updateEditModeInfo();
+            }
+
+            function addOrUpdateManualModule() {
+                const moduleData = getManualModuleFromForm();
+                if (!moduleData) {
+                    return;
+                }
+                if (editingModuleIndex !== null) {
+                    moduleData.cabinet_type = manualModules[editingModuleIndex].cabinet_type;
+                    manualModules[editingModuleIndex] = moduleData;
+                    resetEditMode();
+                } else {
+                    manualModules.push(moduleData);
+                }
                 renderManualModules();
                 updateManualSummary();
             }
 
             document.getElementById("auto-btn").addEventListener("click", () => sendProject(false));
             document.getElementById("manual-btn").addEventListener("click", () => sendProject(true));
-            document.getElementById("add-module-btn").addEventListener("click", addManualModule);
+            addModuleBtn.addEventListener("click", addOrUpdateManualModule);
             document.getElementById("clear-modules-btn").addEventListener("click", () => {
                 manualModules.length = 0;
+                resetEditMode();
                 renderManualModules();
                 updateManualSummary();
             });
@@ -1025,6 +1141,7 @@ def app_status_page() -> HTMLResponse:
             updateFloorHint();
             updateBackTypeDescription();
             updateManualBackTypeState();
+            updateEditModeInfo();
         </script>
     </body>
     </html>
