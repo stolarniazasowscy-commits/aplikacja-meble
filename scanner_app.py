@@ -41,12 +41,13 @@ class ScannerApp(object):
         csv_frame = ttk.LabelFrame(main, text='CSV projektu', padding=8)
         csv_frame.pack(fill='x', pady=4)
 
-        ttk.Button(csv_frame, text='Wybierz plik CSV', command=self.select_csv).grid(row=0, column=0, sticky='w')
+        ttk.Button(csv_frame, text='Wybierz plik CSV', command=self.on_select_csv).grid(row=0, column=0, sticky='w')
         self.csv_label = ttk.Label(csv_frame, text='Brak pliku CSV')
         self.csv_label.grid(row=0, column=1, sticky='w', padx=8)
 
         ttk.Label(csv_frame, text='Tryb CSV').grid(row=1, column=0, sticky='w', pady=4)
         mode = ttk.Combobox(csv_frame, textvariable=self.csv_mode, state='readonly', width=32)
+        self.config_widgets = [mode]
         mode['values'] = ('group_list', 'program_list')
         mode.grid(row=1, column=1, sticky='w')
 
@@ -54,7 +55,7 @@ class ScannerApp(object):
         root_frame = ttk.LabelFrame(main, text='Folder główny projektu', padding=8)
         root_frame.pack(fill='x', pady=4)
 
-        ttk.Button(root_frame, text='Wybierz folder główny projektu', command=self.select_root_folder).grid(row=0, column=0, sticky='w')
+        ttk.Button(root_frame, text='Wybierz folder główny projektu', command=self.on_select_root_folder).grid(row=0, column=0, sticky='w')
         self.root_label = ttk.Label(root_frame, text='Brak folderu')
         self.root_label.grid(row=0, column=1, sticky='w', padx=8)
 
@@ -68,7 +69,7 @@ class ScannerApp(object):
         ttk.Label(scan_frame, text='Kod QR').grid(row=0, column=0, sticky='w')
         self.scan_entry = ttk.Entry(scan_frame, width=80)
         self.scan_entry.grid(row=0, column=1, sticky='we', padx=6)
-        ttk.Button(scan_frame, text='Dodaj skan', command=self.add_scan).grid(row=0, column=2, sticky='w')
+        ttk.Button(scan_frame, text='Dodaj skan', command=self.on_add_scan).grid(row=0, column=2, sticky='w')
 
         self.scan_preview = ttk.Label(scan_frame, text='Oryginalny kod: - | group_id: - | program_name: - | compare_id: -')
         self.scan_preview.grid(row=1, column=0, columnspan=3, sticky='w', pady=4)
@@ -82,11 +83,53 @@ class ScannerApp(object):
 
         btn_row = ttk.Frame(report_frame)
         btn_row.pack(fill='x')
-        ttk.Button(btn_row, text='Generuj raport', command=self.generate_report).pack(side='left')
-        ttk.Button(btn_row, text='Eksportuj raport CSV', command=self.export_report_csv).pack(side='left', padx=8)
+        ttk.Button(btn_row, text='Generuj raport', command=self.on_generate_report).pack(side='left')
+        ttk.Button(btn_row, text='Eksportuj raport CSV', command=self.on_export_report_csv).pack(side='left', padx=8)
 
         self.report_text = tk.Text(report_frame, height=16)
         self.report_text.pack(fill='both', expand=True, pady=4)
+
+        self.scan_entry.bind('<Return>', lambda event: self.on_add_scan())
+        self.root.after(200, lambda: self.focus_scan_entry(False))
+        self.root.bind('<Button-1>', self.on_root_click, add='+')
+        for widget in self.config_widgets:
+            widget.bind('<Return>', lambda event: self.root.after(100, lambda: self.focus_scan_entry(False)))
+            widget.bind('<FocusOut>', lambda event: self.root.after(100, lambda: self.focus_scan_entry(False)))
+
+
+    def focus_scan_entry(self, clear=False):
+        if clear:
+            self.scan_entry.delete(0, tk.END)
+        self.scan_entry.focus_set()
+
+    def on_root_click(self, event):
+        widget = event.widget
+        if widget == self.scan_entry:
+            return
+        if isinstance(widget, (tk.Entry, ttk.Entry)):
+            return
+        if isinstance(widget, ttk.Combobox):
+            return
+        self.root.after(100, lambda: self.focus_scan_entry(False))
+
+    def on_select_csv(self):
+        self.select_csv()
+        self.focus_scan_entry(False)
+
+    def on_select_root_folder(self):
+        self.select_root_folder()
+        self.focus_scan_entry(False)
+
+    def on_add_scan(self):
+        self.add_scan()
+
+    def on_generate_report(self):
+        self.generate_report()
+        self.focus_scan_entry(False)
+
+    def on_export_report_csv(self):
+        self.export_report_csv()
+        self.focus_scan_entry(False)
 
     def select_csv(self):
         path = filedialog.askopenfilename(filetypes=[('CSV', '*.csv'), ('All files', '*.*')])
@@ -215,6 +258,7 @@ class ScannerApp(object):
     def add_scan(self):
         code = self.scan_entry.get()
         if not code.strip():
+            self.focus_scan_entry(True)
             return
         parsed = self.parse_scanned_path(code, self.root_folder)
         parsed['timestamp'] = datetime.datetime.now().isoformat()
@@ -225,7 +269,7 @@ class ScannerApp(object):
             text='Oryginalny kod: {0} | group_id: {1} | program_name: {2} | compare_id: {3}'.format(
                 parsed['original_code'], parsed['group_id'], parsed['program_name'], parsed['compare_id'])
         )
-        self.scan_entry.delete(0, 'end')
+        self.focus_scan_entry(True)
 
     def generate_report(self):
         self.load_csv_entries()
