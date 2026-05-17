@@ -203,14 +203,15 @@ class ScannerApp(object):
             'width': None,
             'thickness': None,
             'source': '',
-            'parse_status': 'ERROR'
+            'parse_status': 'NO_DIMENSIONS',
+            'source_line': ''
         }
         lines = []
         for enc in ('utf-8', 'latin-1'):
             try:
                 with open(file_path, 'r', encoding=enc) as f:
                     for idx, line in enumerate(f):
-                        if idx >= 100:
+                        if idx >= 200:
                             break
                         lines.append(line)
                 break
@@ -222,33 +223,37 @@ class ScannerApp(object):
             return result
 
         for line in lines:
-            if '::UNm' not in line:
+            stripped = line.strip()
+            if not stripped.startswith('::UNm'):
                 continue
-            dl = re.search(r'DL=([0-9\.]+)', line)
-            dh = re.search(r'DH=([0-9\.]+)', line)
-            ds = re.search(r'DS=([0-9\.]+)', line)
+            result['source'] = 'UNm'
+            result['source_line'] = stripped
+            dl = re.search(r'DL=([0-9]+(?:\.[0-9]+)?)', stripped)
+            dh = re.search(r'DH=([0-9]+(?:\.[0-9]+)?)', stripped)
+            ds = re.search(r'DS=([0-9]+(?:\.[0-9]+)?)', stripped)
             if dl and dh and ds:
-                result['length'] = self.parse_float(dl.group(1))
-                result['width'] = self.parse_float(dh.group(1))
-                result['thickness'] = self.parse_float(ds.group(1))
-                result['source'] = 'UNm'
-                if result['length'] is not None and result['width'] is not None and result['thickness'] is not None:
-                    result['parse_status'] = 'OK'
+                result['length'] = int(round(float(dl.group(1))))
+                result['width'] = int(round(float(dh.group(1))))
+                result['thickness'] = int(round(float(ds.group(1))))
+                result['parse_status'] = 'OK'
                 return result
+            result['parse_status'] = 'ERROR_UNM_PARSE'
+            return result
 
         for line in lines:
-            if '::LF=' not in line and 'LF=' not in line:
+            stripped = line.strip()
+            if not stripped.startswith('::LF'):
                 continue
-            lf = re.search(r'LF=([0-9\.]+)', line)
-            hf = re.search(r'HF=([0-9\.]+)', line)
-            sf = re.search(r'SF=([0-9\.]+)', line)
+            result['source'] = 'LF'
+            result['source_line'] = stripped
+            lf = re.search(r'LF=([0-9]+(?:\.[0-9]+)?)', stripped)
+            hf = re.search(r'HF=([0-9]+(?:\.[0-9]+)?)', stripped)
+            sf = re.search(r'SF=([0-9]+(?:\.[0-9]+)?)', stripped)
             if lf and hf and sf:
-                result['length'] = self.parse_float(lf.group(1))
-                result['width'] = self.parse_float(hf.group(1))
-                result['thickness'] = self.parse_float(sf.group(1))
-                result['source'] = 'LF'
-                if result['length'] is not None and result['width'] is not None and result['thickness'] is not None:
-                    result['parse_status'] = 'OK'
+                result['length'] = int(round(float(lf.group(1))))
+                result['width'] = int(round(float(hf.group(1))))
+                result['thickness'] = int(round(float(sf.group(1))))
+                result['parse_status'] = 'OK'
                 return result
 
         return result
@@ -297,7 +302,7 @@ class ScannerApp(object):
                 dims = self.extract_tcn_dimensions(file_path)
                 program_base_name = self.normalize_item_code(filename)
                 self.cnc_dimensions_by_base[program_base_name] = dims
-                self.cnc_records.append({'group_id': group_id, 'program_name': filename, 'program_base_name': program_base_name, 'compare_id': compare_id, 'tcn_length': self.round_mm(dims.get('length')), 'tcn_width': self.round_mm(dims.get('width')), 'tcn_thickness': self.round_mm(dims.get('thickness')), 'tcn_parse_status': dims.get('parse_status')})
+                self.cnc_records.append({'group_id': group_id, 'program_name': filename, 'program_base_name': program_base_name, 'compare_id': compare_id, 'tcn_length': self.round_mm(dims.get('length')), 'tcn_width': self.round_mm(dims.get('width')), 'tcn_thickness': self.round_mm(dims.get('thickness')), 'tcn_parse_status': dims.get('parse_status'), 'tcn_dimension_source_line': dims.get('source_line', '')})
         groups = sorted(set([r['group_id'] for r in self.cnc_records if r['group_id']]))
         self.root_stats.config(text='Pliki .TCN: {0} | Grupy A_: {1} | Lista: {2}'.format(len(self.cnc_records), len(groups), ', '.join(groups) if groups else '-'))
 
@@ -389,6 +394,7 @@ class ScannerApp(object):
             tcn_width = self.round_mm(tcn_width_raw)
             tcn_thickness = self.round_mm(tcn_thickness_raw)
             tcn_parse_status = tcn_data.get('parse_status', 'ERROR')
+            tcn_source_line = tcn_data.get('source_line', '')
             tol = 1
 
             csv_length = self.round_mm(self.parse_float(meta.get('length', '')))
@@ -442,6 +448,7 @@ class ScannerApp(object):
                 'tcn_width': tcn_width,
                 'tcn_thickness': tcn_thickness,
                 'tcn_parse_status': tcn_parse_status,
+                'tcn_dimension_source_line': tcn_source_line,
                 'dim_status': dim_status,
                 'dimension_status': dim_status,
                 'dimension_note': dim_note,
@@ -450,7 +457,7 @@ class ScannerApp(object):
                 'exists_in_csv': 'TAK' if exists_in_csv else 'BRAK',
                 'scanned_count': scanned_count,
                 'status': status,
-                'note': (meta.get('note', '') + ' | ' + note + ' | ' + dim_note + ' | CSV key: {0}'.format(csv_item_key)).strip(' |'),
+                'note': (meta.get('note', '') + ' | ' + note + ' | ' + dim_note + ' | TCN line: {0} | CSV key: {1}'.format(tcn_source_line, csv_item_key)).strip(' |'),
                 'scan_label': scan_label
             })
         return rows
