@@ -15,13 +15,14 @@ except ImportError:
     import tkinter as tk
     from tkinter import filedialog
     from tkinter import ttk
+    from tkinter import font as tkfont
 
 
 class ScannerApp(object):
     def __init__(self, root):
         self.root = root
         self.root.title('CNC QR Scanner')
-        self.root.geometry('1000x750')
+        self.root.geometry('1000x720')
 
         self.root_folder = ''
         self.csv_mode = tk.StringVar()
@@ -43,97 +44,93 @@ class ScannerApp(object):
     def _build_ui(self):
         self.root.grid_rowconfigure(0, weight=1)
         self.root.grid_columnconfigure(0, weight=1)
-
-        canvas = tk.Canvas(self.root, highlightthickness=0)
-        canvas.grid(row=0, column=0, sticky='nsew')
-        main_scroll = ttk.Scrollbar(self.root, orient='vertical', command=canvas.yview)
-        main_scroll.grid(row=0, column=1, sticky='ns')
-        canvas.configure(yscrollcommand=main_scroll.set)
-
-        main = ttk.Frame(canvas, padding=10)
-        main_window = canvas.create_window((0, 0), window=main, anchor='nw')
-
-        def _on_main_configure(event):
-            canvas.configure(scrollregion=canvas.bbox('all'))
-
-        def _on_canvas_configure(event):
-            canvas.itemconfigure(main_window, width=event.width)
-
-        main.bind('<Configure>', _on_main_configure)
-        canvas.bind('<Configure>', _on_canvas_configure)
+        main = ttk.Frame(self.root, padding=4)
+        main.grid(row=0, column=0, sticky='nsew')
 
         main.grid_rowconfigure(4, weight=1)
         main.grid_columnconfigure(0, weight=1)
 
-        sources_frame = ttk.LabelFrame(main, text='Źródła danych', padding=8)
-        sources_frame.grid(row=0, column=0, sticky='ew', pady=4)
+        self.compact_font = tkfont.Font(size=8)
+        self.table_font = tkfont.Font(size=10)
+        self.table_head_font = tkfont.Font(size=10, weight='bold')
+        style = ttk.Style()
+        style.configure('Compact.TButton', font=self.compact_font, padding=(2, 1))
+        style.configure('Compact.TLabel', font=self.compact_font)
+        style.configure('Compact.TLabelframe.Label', font=self.compact_font)
+        style.configure('Compact.Treeview', font=self.compact_font, rowheight=16)
+        style.configure('Compact.Treeview.Heading', font=self.compact_font)
+        style.configure('Live.Treeview', font=self.table_font, rowheight=18)
+        style.configure('Live.Treeview.Heading', font=self.table_head_font)
+
+        sources_frame = ttk.LabelFrame(main, text='Źródła danych', padding=4, style='Compact.TLabelframe')
+        sources_frame.grid(row=0, column=0, sticky='ew', pady=2)
         sources_frame.grid_columnconfigure(6, weight=1)
 
-        ttk.Button(sources_frame, text='Dodaj CSV projektu', command=self.on_add_csv).grid(row=0, column=0, sticky='w')
-        ttk.Button(sources_frame, text='Usuń zaznaczony CSV', command=self.on_remove_selected_csv).grid(row=0, column=1, sticky='w', padx=4)
-        ttk.Button(sources_frame, text='Wyczyść listy CSV', command=self.on_clear_csv_list).grid(row=0, column=2, sticky='w')
-        ttk.Label(sources_frame, text='Tryb CSV').grid(row=0, column=3, sticky='e', padx=(8, 4))
+        ttk.Button(sources_frame, text='Dodaj CSV projektu', command=self.on_add_csv, style='Compact.TButton').grid(row=0, column=0, sticky='w', padx=2, pady=2)
+        ttk.Button(sources_frame, text='Usuń zaznaczony CSV', command=self.on_remove_selected_csv, style='Compact.TButton').grid(row=0, column=1, sticky='w', padx=2, pady=2)
+        ttk.Button(sources_frame, text='Wyczyść listy CSV', command=self.on_clear_csv_list, style='Compact.TButton').grid(row=0, column=2, sticky='w', padx=2, pady=2)
+        ttk.Label(sources_frame, text='Tryb CSV', style='Compact.TLabel').grid(row=0, column=3, sticky='e', padx=(2, 2), pady=2)
         mode = ttk.Combobox(sources_frame, textvariable=self.csv_mode, state='readonly', width=18)
         mode['values'] = ('group_list', 'program_list')
-        mode.grid(row=0, column=4, sticky='w')
+        mode.grid(row=0, column=4, sticky='w', padx=2, pady=2)
+        mode.configure(font=self.compact_font)
         mode.bind('<<ComboboxSelected>>', lambda event: self.on_csv_mode_changed())
-        ttk.Button(sources_frame, text='Wybierz folder główny projektu', command=self.on_select_root_folder).grid(row=0, column=5, sticky='w', padx=4)
-        ttk.Button(sources_frame, text='Odśwież folder CNC', command=self.on_refresh_root_folder).grid(row=0, column=6, sticky='w', padx=4)
+        ttk.Button(sources_frame, text='Wybierz folder główny projektu', command=self.on_select_root_folder, style='Compact.TButton').grid(row=0, column=5, sticky='w', padx=2, pady=2)
+        ttk.Button(sources_frame, text='Odśwież folder CNC', command=self.on_refresh_root_folder, style='Compact.TButton').grid(row=0, column=6, sticky='w', padx=2, pady=2)
 
-        self.csv_stats = ttk.Label(sources_frame, text='Pliki CSV: 0')
-        self.csv_stats.grid(row=1, column=0, sticky='w', pady=(6, 0))
-        self.csv_items_stats = ttk.Label(sources_frame, text='Pozycje CSV (scalone): 0')
-        self.csv_items_stats.grid(row=1, column=1, columnspan=2, sticky='w', pady=(6, 0))
-        self.root_label = ttk.Label(sources_frame, text='Folder główny: Brak folderu')
-        self.root_label.grid(row=1, column=3, columnspan=2, sticky='w', pady=(6, 0))
-        self.root_stats = ttk.Label(sources_frame, text='Pliki .TCN: 0 | Grupy A_: 0')
-        self.root_stats.grid(row=1, column=5, columnspan=2, sticky='w', pady=(6, 0))
+        self.csv_stats = ttk.Label(sources_frame, text='Pliki CSV: 0', style='Compact.TLabel')
+        self.csv_stats.grid(row=1, column=0, sticky='w', pady=(2, 0))
+        self.csv_items_stats = ttk.Label(sources_frame, text='Pozycje CSV (scalone): 0', style='Compact.TLabel')
+        self.csv_items_stats.grid(row=1, column=1, columnspan=2, sticky='w', pady=(2, 0))
+        self.root_label = ttk.Label(sources_frame, text='Folder główny: Brak folderu', style='Compact.TLabel')
+        self.root_label.grid(row=1, column=3, columnspan=2, sticky='w', pady=(2, 0))
+        self.root_stats = ttk.Label(sources_frame, text='Pliki .TCN: 0 | Grupy A_: 0', style='Compact.TLabel')
+        self.root_stats.grid(row=1, column=5, columnspan=2, sticky='w', pady=(2, 0))
 
-        csv_list_frame = ttk.LabelFrame(main, text='Lista plików CSV', padding=6)
-        csv_list_frame.grid(row=1, column=0, sticky='ew', pady=4)
+        csv_list_frame = ttk.LabelFrame(main, text='Lista plików CSV', padding=4, style='Compact.TLabelframe')
+        csv_list_frame.grid(row=1, column=0, sticky='ew', pady=2)
         csv_list_frame.grid_columnconfigure(0, weight=1)
-        csv_list_frame.grid_rowconfigure(0, weight=1)
-        self.csv_listbox = tk.Listbox(csv_list_frame, height=3)
+        self.csv_listbox = tk.Listbox(csv_list_frame, height=2, font=self.compact_font)
         self.csv_listbox.grid(row=0, column=0, sticky='ew')
         csv_list_scroll = ttk.Scrollbar(csv_list_frame, orient='vertical', command=self.csv_listbox.yview)
         csv_list_scroll.grid(row=0, column=1, sticky='ns')
         self.csv_listbox.configure(yscrollcommand=csv_list_scroll.set)
 
-        scan_frame = ttk.LabelFrame(main, text='Skanowanie', padding=8)
-        scan_frame.grid(row=2, column=0, sticky='ew', pady=4)
+        scan_frame = ttk.LabelFrame(main, text='Skanowanie', padding=4, style='Compact.TLabelframe')
+        scan_frame.grid(row=2, column=0, sticky='ew', pady=2)
         scan_frame.grid_columnconfigure(1, weight=1)
 
-        ttk.Label(scan_frame, text='Kod QR').grid(row=0, column=0, sticky='w')
+        ttk.Label(scan_frame, text='Kod QR', style='Compact.TLabel').grid(row=0, column=0, sticky='w', padx=2, pady=2)
         self.scan_entry = ttk.Entry(scan_frame)
-        self.scan_entry.grid(row=0, column=1, sticky='ew', padx=6)
-        ttk.Button(scan_frame, text='Dodaj skan', command=self.on_add_scan).grid(row=0, column=2, sticky='w')
-        ttk.Button(scan_frame, text='Usuń zaznaczony skan', command=self.on_remove_selected_scan).grid(row=0, column=3, sticky='w', padx=4)
-        ttk.Button(scan_frame, text='Wyczyść skany', command=self.on_clear_scans).grid(row=0, column=4, sticky='w')
+        self.scan_entry.grid(row=0, column=1, sticky='ew', padx=2, pady=2)
+        ttk.Button(scan_frame, text='Dodaj skan', command=self.on_add_scan, style='Compact.TButton').grid(row=0, column=2, sticky='w', padx=2, pady=2)
+        ttk.Button(scan_frame, text='Usuń zaznaczony skan', command=self.on_remove_selected_scan, style='Compact.TButton').grid(row=0, column=3, sticky='w', padx=2, pady=2)
+        ttk.Button(scan_frame, text='Wyczyść skany', command=self.on_clear_scans, style='Compact.TButton').grid(row=0, column=4, sticky='w', padx=2, pady=2)
 
-        self.scan_preview = ttk.Label(scan_frame, text='Oryginalny kod: - | group_id: - | program_name: - | compare_id: -')
-        self.scan_preview.grid(row=1, column=0, columnspan=5, sticky='w', pady=(6, 2))
+        self.scan_preview = ttk.Label(scan_frame, text='Oryginalny kod: - | group_id: - | program_name: - | compare_id: -', style='Compact.TLabel')
+        self.scan_preview.grid(row=1, column=0, columnspan=5, sticky='w', pady=(2, 2))
 
         scan_list_frame = ttk.Frame(scan_frame)
         scan_list_frame.grid(row=2, column=0, columnspan=5, sticky='ew')
         scan_list_frame.grid_columnconfigure(0, weight=1)
-        self.scan_list = tk.Listbox(scan_list_frame, height=4)
+        self.scan_list = tk.Listbox(scan_list_frame, height=3, font=self.compact_font)
         self.scan_list.grid(row=0, column=0, sticky='ew')
         scan_scroll = ttk.Scrollbar(scan_list_frame, orient='vertical', command=self.scan_list.yview)
         scan_scroll.grid(row=0, column=1, sticky='ns')
         self.scan_list.configure(yscrollcommand=scan_scroll.set)
 
-        summary = ttk.LabelFrame(main, text='Podsumowanie', padding=6)
-        summary.grid(row=3, column=0, sticky='ew', pady=4)
-        self.summary_label = ttk.Label(summary, text='CSV: 0 | CNC: 0 | Skany: 0 | OK: 0 | Problemy: 0')
+        summary = ttk.LabelFrame(main, text='Podsumowanie', padding=4, style='Compact.TLabelframe')
+        summary.grid(row=3, column=0, sticky='ew', pady=2)
+        self.summary_label = ttk.Label(summary, text='CSV: 0 | CNC: 0 | Skany: 0 | OK: 0 | Problemy: 0', style='Compact.TLabel')
         self.summary_label.grid(row=0, column=0, sticky='w')
 
         live_frame = ttk.LabelFrame(main, text='Bieżąca kontrola CNC', padding=8)
-        live_frame.grid(row=4, column=0, sticky='nsew', pady=4)
+        live_frame.grid(row=4, column=0, sticky='nsew', pady=2)
         live_frame.grid_rowconfigure(0, weight=1)
         live_frame.grid_columnconfigure(0, weight=1)
 
         cols = ('nr', 'scan', 'cnc', 'csv', 'qty', 'csv_length', 'tcn_length', 'csv_width', 'tcn_width', 'csv_thickness', 'tcn_thickness', 'edge', 'dim_status', 'status', 'note')
-        self.live_tree = ttk.Treeview(live_frame, columns=cols, show='headings', height=12)
+        self.live_tree = ttk.Treeview(live_frame, columns=cols, show='headings', height=12, style='Live.Treeview')
         self.live_tree.heading('nr', text='Nr')
         self.live_tree.heading('scan', text='Skan')
         self.live_tree.heading('cnc', text='Program CNC')
@@ -176,21 +173,21 @@ class ScannerApp(object):
         self.live_tree.tag_configure('warn', background='#fff6b3')
         self.live_tree.tag_configure('missing', background='#ffd8a8')
 
-        report_frame = ttk.LabelFrame(main, text='Raporty', padding=6)
-        report_frame.grid(row=5, column=0, sticky='ew', pady=4)
-        ttk.Button(report_frame, text='Odśwież porównanie', command=self.on_generate_report).grid(row=0, column=0, sticky='w')
-        ttk.Button(report_frame, text='Eksportuj raport ręcznie', command=self.on_export_report_csv).grid(row=0, column=1, sticky='w', padx=6)
-        self.report_text = tk.Text(report_frame, height=4)
+        report_frame = ttk.LabelFrame(main, text='Raporty', padding=4, style='Compact.TLabelframe')
+        report_frame.grid(row=5, column=0, sticky='ew', pady=2)
+        ttk.Button(report_frame, text='Odśwież porównanie', command=self.on_generate_report, style='Compact.TButton').grid(row=0, column=0, sticky='w')
+        ttk.Button(report_frame, text='Eksportuj raport ręcznie', command=self.on_export_report_csv, style='Compact.TButton').grid(row=0, column=1, sticky='w', padx=2)
+        self.report_text = tk.Text(report_frame, height=3, font=self.compact_font)
         self.report_text.grid(row=1, column=0, columnspan=2, sticky='ew', pady=(4, 0))
         report_scroll = ttk.Scrollbar(report_frame, orient='vertical', command=self.report_text.yview)
         report_scroll.grid(row=1, column=2, sticky='ns', pady=(4, 0))
         self.report_text.configure(yscrollcommand=report_scroll.set)
 
-        csv_preview_frame = ttk.LabelFrame(main, text='Wczytana lista CSV', padding=6)
-        csv_preview_frame.grid(row=6, column=0, sticky='ew', pady=4)
+        csv_preview_frame = ttk.LabelFrame(main, text='Wczytana lista CSV', padding=4, style='Compact.TLabelframe')
+        csv_preview_frame.grid(row=6, column=0, sticky='ew', pady=2)
         csv_preview_frame.grid_columnconfigure(0, weight=1)
         csv_cols = ('nr', 'code', 'group', 'qty', 'length', 'width', 'thickness', 'edge')
-        self.csv_tree = ttk.Treeview(csv_preview_frame, columns=csv_cols, show='headings', height=4)
+        self.csv_tree = ttk.Treeview(csv_preview_frame, columns=csv_cols, show='headings', height=3, style='Compact.Treeview')
         self.csv_tree.heading('nr', text='Nr')
         self.csv_tree.heading('code', text='Kod')
         self.csv_tree.heading('group', text='Grupa')
@@ -276,6 +273,12 @@ class ScannerApp(object):
         if len(text) <= max_len:
             return text
         return text[:max_len - 3] + '...'
+
+    def short_path(self, path, max_len=80):
+        text = '' if path is None else str(path)
+        if len(text) <= max_len:
+            return text
+        return '...' + text[-max_len:]
 
     def extract_tcn_dimensions(self, file_path):
         result = {
@@ -687,7 +690,7 @@ class ScannerApp(object):
         path = filedialog.askdirectory()
         if path:
             self.root_folder = path
-            self.root_label.config(text='Folder główny: {0}'.format(path))
+            self.root_label.config(text='Folder główny: {0}'.format(self.short_path(path, 80)))
             self.scan_cnc_folder()
             self.update_live_comparison()
         self.focus_scan_entry(False)
