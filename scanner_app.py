@@ -165,6 +165,13 @@ class ScannerApp(object):
             code = code[:-4]
         return code
 
+    def build_csv_item_key(self, group_id, program_name):
+        clean_group_id = (group_id or '').strip().upper()
+        program_base_name = self.normalize_item_code(program_name)
+        if clean_group_id and program_base_name:
+            return clean_group_id + ' ' + program_base_name
+        return clean_group_id or program_base_name
+
     def parse_int(self, value, default_value):
         try:
             return int((value or '').strip())
@@ -250,13 +257,15 @@ class ScannerApp(object):
                 group_id = part
                 break
         compare_id = group_id + '\\' + program_name if group_id else program_name
+        csv_item_key = self.build_csv_item_key(group_id, program_name)
         return {
             'timestamp': datetime.datetime.now().isoformat(),
             'original_code': original_code,
             'group_id': group_id,
             'program_name': program_name,
             'program_base_name': program_base_name,
-            'compare_id': compare_id
+            'compare_id': compare_id,
+            'csv_item_key': csv_item_key
         }
 
     def scan_cnc_folder(self):
@@ -300,10 +309,11 @@ class ScannerApp(object):
                         continue
                     if not ''.join(row).strip():
                         continue
+                    group_id = (row[1] if len(row) > 1 else '').strip()
                     item_code = self.normalize_item_code(row[0] if len(row) > 0 else '')
+                    item_code = self.build_csv_item_key(group_id, item_code)
                     if not item_code:
                         continue
-                    group_id = (row[1] if len(row) > 1 else '').strip()
                     quantity = self.parse_int(row[4] if len(row) > 4 else '', 1)
                     length = (row[5] if len(row) > 5 else '').strip()
                     width = (row[6] if len(row) > 6 else '').strip()
@@ -342,22 +352,23 @@ class ScannerApp(object):
 
     def build_live_rows(self):
         rows = []
-        scans_by_program_base = Counter([s.get('program_base_name', '') for s in self.scan_records if s.get('program_base_name')])
+        scans_by_csv_item_key = Counter([s.get('csv_item_key', '') for s in self.scan_records if s.get('csv_item_key')])
         for rec in self.scan_records:
             cid = rec.get('compare_id', '')
             pname = rec.get('program_name', '')
             gid = rec.get('group_id', '')
             pbase = rec.get('program_base_name', '')
+            csv_item_key = rec.get('csv_item_key', '')
             scan_label = pbase or cid or gid or pname
 
             exists_in_cnc = False
             if pbase:
                 exists_in_cnc = any([x for x in self.cnc_records if x.get('program_base_name', '') == pbase])
 
-            exists_in_csv = ('item', pbase) in self.merged_counter
-            expected = self.merged_counter.get(('item', pbase), 0)
-            scanned_count = scans_by_program_base.get(pbase, 0) if pbase else 0
-            meta = self.csv_item_meta.get(pbase, {})
+            exists_in_csv = ('item', csv_item_key) in self.merged_counter
+            expected = self.merged_counter.get(('item', csv_item_key), 0)
+            scanned_count = scans_by_csv_item_key.get(csv_item_key, 0) if csv_item_key else 0
+            meta = self.csv_item_meta.get(csv_item_key, {})
 
             status = 'OK'
             note = 'Skan istnieje w CNC i CSV'
@@ -412,7 +423,7 @@ class ScannerApp(object):
                 'group_id': gid,
                 'program_name': pname,
                 'compare_id': cid,
-                'item_code': pbase,
+                'item_code': csv_item_key,
                 'quantity': expected,
                 'length': meta.get('length', ''),
                 'width': meta.get('width', ''),
@@ -464,7 +475,7 @@ class ScannerApp(object):
         missing_lines = []
         for item in self.merged_project_data:
             code = item.get('item_code', '')
-            scanned = Counter([r.get('program_base_name', '') for r in self.scan_records]).get(code, 0)
+            scanned = Counter([r.get('csv_item_key', '') for r in self.scan_records]).get(code, 0)
             if scanned < item.get('quantity', 0):
                 missing_lines.append('{0}: BRAKUJE ({1}/{2})'.format(code, scanned, item.get('quantity', 0)))
         self.report_text.delete('1.0', 'end')
@@ -555,7 +566,7 @@ class ScannerApp(object):
         parsed = self.parse_scanned_path(code, self.root_folder)
         self.scan_records.append(parsed)
         self.scan_list.insert('end', '{0} | {1}'.format(parsed.get('group_id', '-') or '-', parsed.get('program_name', '-') or '-'))
-        self.scan_preview.config(text='Oryginalny kod: {0} | group_id: {1} | program_name: {2} | compare_id: {3}'.format(parsed.get('original_code', ''), parsed.get('group_id', ''), parsed.get('program_name', ''), parsed.get('compare_id', '')))
+        self.scan_preview.config(text='Oryginalny kod: {0} | group_id: {1} | program_name: {2} | compare_id: {3} | csv_item_key: {4}'.format(parsed.get('original_code', ''), parsed.get('group_id', ''), parsed.get('program_name', ''), parsed.get('compare_id', ''), parsed.get('csv_item_key', '')))
         self.update_live_comparison()
         self.focus_scan_entry(True)
 
