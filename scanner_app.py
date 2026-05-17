@@ -21,7 +21,7 @@ class ScannerApp(object):
     def __init__(self, root):
         self.root = root
         self.root.title('CNC QR Scanner')
-        self.root.geometry('900x650')
+        self.root.geometry('1000x750')
 
         self.root_folder = ''
         self.csv_mode = tk.StringVar()
@@ -44,8 +44,24 @@ class ScannerApp(object):
         self.root.grid_rowconfigure(0, weight=1)
         self.root.grid_columnconfigure(0, weight=1)
 
-        main = ttk.Frame(self.root, padding=10)
-        main.grid(row=0, column=0, sticky='nsew')
+        canvas = tk.Canvas(self.root, highlightthickness=0)
+        canvas.grid(row=0, column=0, sticky='nsew')
+        main_scroll = ttk.Scrollbar(self.root, orient='vertical', command=canvas.yview)
+        main_scroll.grid(row=0, column=1, sticky='ns')
+        canvas.configure(yscrollcommand=main_scroll.set)
+
+        main = ttk.Frame(canvas, padding=10)
+        main_window = canvas.create_window((0, 0), window=main, anchor='nw')
+
+        def _on_main_configure(event):
+            canvas.configure(scrollregion=canvas.bbox('all'))
+
+        def _on_canvas_configure(event):
+            canvas.itemconfigure(main_window, width=event.width)
+
+        main.bind('<Configure>', _on_main_configure)
+        canvas.bind('<Configure>', _on_canvas_configure)
+
         main.grid_rowconfigure(4, weight=1)
         main.grid_columnconfigure(0, weight=1)
 
@@ -117,7 +133,7 @@ class ScannerApp(object):
         live_frame.grid_columnconfigure(0, weight=1)
 
         cols = ('nr', 'scan', 'cnc', 'csv', 'qty', 'csv_length', 'tcn_length', 'csv_width', 'tcn_width', 'csv_thickness', 'tcn_thickness', 'edge', 'dim_status', 'status', 'note')
-        self.live_tree = ttk.Treeview(live_frame, columns=cols, show='headings', height=8)
+        self.live_tree = ttk.Treeview(live_frame, columns=cols, show='headings', height=12)
         self.live_tree.heading('nr', text='Nr')
         self.live_tree.heading('scan', text='Skan')
         self.live_tree.heading('cnc', text='Program CNC')
