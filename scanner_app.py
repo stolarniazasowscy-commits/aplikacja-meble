@@ -117,7 +117,7 @@ class ScannerApp(object):
         live_frame.grid_columnconfigure(0, weight=1)
 
         cols = ('nr', 'scan', 'cnc', 'csv', 'qty', 'csv_length', 'tcn_length', 'csv_width', 'tcn_width', 'csv_thickness', 'tcn_thickness', 'edge', 'dim_status', 'status', 'note')
-        self.live_tree = ttk.Treeview(live_frame, columns=cols, show='headings', height=16)
+        self.live_tree = ttk.Treeview(live_frame, columns=cols, show='headings', height=8)
         self.live_tree.heading('nr', text='Nr')
         self.live_tree.heading('scan', text='Skan')
         self.live_tree.heading('cnc', text='Program CNC')
@@ -174,7 +174,7 @@ class ScannerApp(object):
         csv_preview_frame.grid(row=6, column=0, sticky='ew', pady=4)
         csv_preview_frame.grid_columnconfigure(0, weight=1)
         csv_cols = ('nr', 'code', 'group', 'qty', 'length', 'width', 'thickness', 'edge')
-        self.csv_tree = ttk.Treeview(csv_preview_frame, columns=csv_cols, show='headings', height=8)
+        self.csv_tree = ttk.Treeview(csv_preview_frame, columns=csv_cols, show='headings', height=4)
         self.csv_tree.heading('nr', text='Nr')
         self.csv_tree.heading('code', text='Kod')
         self.csv_tree.heading('group', text='Grupa')
