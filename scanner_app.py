@@ -21,6 +21,7 @@ class ScannerApp(object):
     def __init__(self, root):
         self.root = root
         self.root.title('CNC QR Scanner')
+        self.root.geometry('900x650')
 
         self.root_folder = ''
         self.csv_mode = tk.StringVar()
@@ -115,8 +116,9 @@ class ScannerApp(object):
         live_frame.grid_rowconfigure(0, weight=1)
         live_frame.grid_columnconfigure(0, weight=1)
 
-        cols = ('scan', 'cnc', 'csv', 'qty', 'csv_length', 'tcn_length', 'csv_width', 'tcn_width', 'csv_thickness', 'tcn_thickness', 'edge', 'dim_status', 'status', 'note')
+        cols = ('nr', 'scan', 'cnc', 'csv', 'qty', 'csv_length', 'tcn_length', 'csv_width', 'tcn_width', 'csv_thickness', 'tcn_thickness', 'edge', 'dim_status', 'status', 'note')
         self.live_tree = ttk.Treeview(live_frame, columns=cols, show='headings', height=16)
+        self.live_tree.heading('nr', text='Nr')
         self.live_tree.heading('scan', text='Skan')
         self.live_tree.heading('cnc', text='Program CNC')
         self.live_tree.heading('csv', text='Element z CSV')
@@ -131,11 +133,21 @@ class ScannerApp(object):
         self.live_tree.heading('dim_status', text='Kontrola wymiarów')
         self.live_tree.heading('status', text='Status')
         self.live_tree.heading('note', text='Uwagi')
-        self.live_tree.column('scan', width=220)
-        self.live_tree.column('cnc', width=100, anchor='center')
-        self.live_tree.column('csv', width=140, anchor='center')
-        self.live_tree.column('qty', width=90, anchor='center')
-        self.live_tree.column('note', width=280)
+        self.live_tree.column('nr', width=35, anchor='center', stretch=False)
+        self.live_tree.column('scan', width=90, anchor='center', stretch=False)
+        self.live_tree.column('cnc', width=70, anchor='center', stretch=False)
+        self.live_tree.column('csv', width=70, anchor='center', stretch=False)
+        self.live_tree.column('qty', width=50, anchor='center', stretch=False)
+        self.live_tree.column('csv_length', width=55, anchor='center', stretch=False)
+        self.live_tree.column('tcn_length', width=55, anchor='center', stretch=False)
+        self.live_tree.column('csv_width', width=55, anchor='center', stretch=False)
+        self.live_tree.column('tcn_width', width=55, anchor='center', stretch=False)
+        self.live_tree.column('csv_thickness', width=50, anchor='center', stretch=False)
+        self.live_tree.column('tcn_thickness', width=50, anchor='center', stretch=False)
+        self.live_tree.column('edge', width=80, anchor='center', stretch=False)
+        self.live_tree.column('dim_status', width=110, anchor='center', stretch=False)
+        self.live_tree.column('status', width=90, anchor='center', stretch=False)
+        self.live_tree.column('note', width=180, anchor='w', stretch=False)
         self.live_tree.grid(row=0, column=0, sticky='nsew')
         live_y = ttk.Scrollbar(live_frame, orient='vertical', command=self.live_tree.yview)
         live_y.grid(row=0, column=1, sticky='ns')
@@ -161,15 +173,24 @@ class ScannerApp(object):
         csv_preview_frame = ttk.LabelFrame(main, text='Wczytana lista CSV', padding=6)
         csv_preview_frame.grid(row=6, column=0, sticky='ew', pady=4)
         csv_preview_frame.grid_columnconfigure(0, weight=1)
-        csv_cols = ('code', 'group', 'qty', 'length', 'width', 'thickness', 'edge')
+        csv_cols = ('nr', 'code', 'group', 'qty', 'length', 'width', 'thickness', 'edge')
         self.csv_tree = ttk.Treeview(csv_preview_frame, columns=csv_cols, show='headings', height=8)
+        self.csv_tree.heading('nr', text='Nr')
         self.csv_tree.heading('code', text='Kod')
         self.csv_tree.heading('group', text='Grupa')
         self.csv_tree.heading('qty', text='Ilość')
-        self.csv_tree.heading('length', text='Długość')
-        self.csv_tree.heading('width', text='Szerokość')
-        self.csv_tree.heading('thickness', text='Grubość')
+        self.csv_tree.heading('length', text='Dł.')
+        self.csv_tree.heading('width', text='Szer.')
+        self.csv_tree.heading('thickness', text='Gr.')
         self.csv_tree.heading('edge', text='Obrzeże')
+        self.csv_tree.column('nr', width=35, anchor='center', stretch=False)
+        self.csv_tree.column('code', width=90, anchor='center', stretch=False)
+        self.csv_tree.column('group', width=70, anchor='center', stretch=False)
+        self.csv_tree.column('qty', width=50, anchor='center', stretch=False)
+        self.csv_tree.column('length', width=55, anchor='center', stretch=False)
+        self.csv_tree.column('width', width=55, anchor='center', stretch=False)
+        self.csv_tree.column('thickness', width=50, anchor='center', stretch=False)
+        self.csv_tree.column('edge', width=90, anchor='center', stretch=False)
         self.csv_tree.grid(row=0, column=0, sticky='ew')
         csv_preview_scroll = ttk.Scrollbar(csv_preview_frame, orient='vertical', command=self.csv_tree.yview)
         csv_preview_scroll.grid(row=0, column=1, sticky='ns')
@@ -225,6 +246,20 @@ class ScannerApp(object):
         if value is None:
             return None
         return int(round(value))
+
+    def format_number(self, value):
+        if value in (None, ''):
+            return ''
+        try:
+            return str(int(round(float(value))))
+        except Exception:
+            return ''
+
+    def short_text(self, value, max_len):
+        text = '' if value is None else str(value)
+        if len(text) <= max_len:
+            return text
+        return text[:max_len - 3] + '...'
 
     def extract_tcn_dimensions(self, file_path):
         result = {
@@ -411,15 +446,16 @@ class ScannerApp(object):
         self.csv_items_stats.config(text='Pozycje CSV (scalone): {0}'.format(len(self.merged_project_data)))
         for item in self.csv_tree.get_children():
             self.csv_tree.delete(item)
-        for row in self.merged_project_data:
+        for idx, row in enumerate(self.merged_project_data, 1):
             self.csv_tree.insert('', 'end', values=(
-                row.get('item_code', ''),
-                row.get('group_id', ''),
+                idx,
+                self.short_text(row.get('item_code', ''), 12),
+                self.short_text(row.get('group_id', ''), 10),
                 row.get('quantity', ''),
-                row.get('length', ''),
-                row.get('width', ''),
-                row.get('thickness', ''),
-                row.get('edge_info', '')
+                self.format_number(row.get('length', '')),
+                self.format_number(row.get('width', '')),
+                self.format_number(row.get('thickness', '')),
+                self.short_text(row.get('edge_info', ''), 12)
             ))
 
     def build_live_rows(self):
@@ -535,7 +571,7 @@ class ScannerApp(object):
         for item in self.live_tree.get_children():
             self.live_tree.delete(item)
         ok_count = 0
-        for row in self.report_rows:
+        for idx, row in enumerate(self.report_rows, 1):
             status = row['status']
             dim_status = row.get('dim_status', '')
             tag = 'ok'
@@ -549,7 +585,7 @@ class ScannerApp(object):
                 tag = 'bad'
             else:
                 ok_count += 1
-            self.live_tree.insert('', 'end', values=(row['scan_label'], row.get('program_name', ''), row.get('item_code', ''), row.get('quantity', 0), row.get('csv_length', ''), row.get('tcn_length', ''), row.get('csv_width', ''), row.get('tcn_width', ''), row.get('csv_thickness', ''), row.get('tcn_thickness', ''), row.get('edge_info', ''), row.get('dim_status', ''), row['status'], row['note']), tags=(tag,))
+            self.live_tree.insert('', 'end', values=(idx, self.short_text(row['scan_label'], 12), self.short_text(row.get('program_name', ''), 10), self.short_text(row.get('item_code', ''), 10), row.get('quantity', 0), self.format_number(row.get('csv_length', '')), self.format_number(row.get('tcn_length', '')), self.format_number(row.get('csv_width', '')), self.format_number(row.get('tcn_width', '')), self.format_number(row.get('csv_thickness', '')), self.format_number(row.get('tcn_thickness', '')), self.short_text(row.get('edge_info', ''), 12), row.get('dim_status', ''), self.short_text(row['status'], 14), self.short_text(row['note'], 40)), tags=(tag,))
 
         problem_count = len(self.report_rows) - ok_count
         self.summary_label.config(text='CSV: {0} | CNC: {1} | Skany: {2} | OK: {3} | Problemy: {4}'.format(len(self.merged_project_data), len(self.cnc_records), len(self.scan_records), ok_count, problem_count))
@@ -602,7 +638,7 @@ class ScannerApp(object):
             return
         if not any([x for x in self.csv_files if x['path'] == path]):
             self.csv_files.append({'name': os.path.basename(path), 'path': path})
-            self.csv_listbox.insert('end', path)
+            self.csv_listbox.insert('end', os.path.basename(path))
         self.reload_all_csv()
         self.update_live_comparison()
         self.focus_scan_entry(False)
@@ -653,7 +689,7 @@ class ScannerApp(object):
         parsed = self.parse_scanned_path(code, self.root_folder)
         self.scan_records.append(parsed)
         scan_key = parsed.get('csv_item_key', '') or (((parsed.get('group_id', '') + ' ' + parsed.get('program_base_name', '')).strip()) if parsed.get('group_id', '') else parsed.get('program_base_name', ''))
-        self.scan_list.insert('end', '{0} | {1}'.format(scan_key or '-', parsed.get('program_name', '-') or '-'))
+        self.scan_list.insert('end', scan_key or '-')
         self.scan_preview.config(text='Oryginalny kod: {0} | group_id: {1} | program_name: {2} | compare_id: {3} | csv_item_key: {4}'.format(parsed.get('original_code', ''), parsed.get('group_id', ''), parsed.get('program_name', ''), parsed.get('compare_id', ''), parsed.get('csv_item_key', '')))
         self.update_live_comparison()
         self.focus_scan_entry(True)
