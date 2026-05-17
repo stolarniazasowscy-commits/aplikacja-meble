@@ -40,67 +40,83 @@ class ScannerApp(object):
         self.update_live_comparison()
 
     def _build_ui(self):
+        self.root.grid_rowconfigure(0, weight=1)
+        self.root.grid_columnconfigure(0, weight=1)
+
         main = ttk.Frame(self.root, padding=10)
-        main.pack(fill='both', expand=True)
+        main.grid(row=0, column=0, sticky='nsew')
+        main.grid_rowconfigure(4, weight=1)
+        main.grid_columnconfigure(0, weight=1)
 
-        csv_frame = ttk.LabelFrame(main, text='CSV projektu', padding=8)
-        csv_frame.pack(fill='x', pady=4)
+        sources_frame = ttk.LabelFrame(main, text='Źródła danych', padding=8)
+        sources_frame.grid(row=0, column=0, sticky='ew', pady=4)
+        sources_frame.grid_columnconfigure(6, weight=1)
 
-        ttk.Button(csv_frame, text='Dodaj CSV projektu', command=self.on_add_csv).grid(row=0, column=0, sticky='w')
-        ttk.Button(csv_frame, text='Usuń zaznaczony CSV', command=self.on_remove_selected_csv).grid(row=0, column=1, sticky='w', padx=6)
-        ttk.Button(csv_frame, text='Wyczyść listy CSV', command=self.on_clear_csv_list).grid(row=0, column=2, sticky='w')
-
-        self.csv_listbox = tk.Listbox(csv_frame, height=4)
-        self.csv_listbox.grid(row=1, column=0, columnspan=3, sticky='we', pady=4)
-
-        ttk.Label(csv_frame, text='Tryb CSV').grid(row=2, column=0, sticky='w', pady=4)
-        mode = ttk.Combobox(csv_frame, textvariable=self.csv_mode, state='readonly', width=24)
+        ttk.Button(sources_frame, text='Dodaj CSV projektu', command=self.on_add_csv).grid(row=0, column=0, sticky='w')
+        ttk.Button(sources_frame, text='Usuń zaznaczony CSV', command=self.on_remove_selected_csv).grid(row=0, column=1, sticky='w', padx=4)
+        ttk.Button(sources_frame, text='Wyczyść listy CSV', command=self.on_clear_csv_list).grid(row=0, column=2, sticky='w')
+        ttk.Label(sources_frame, text='Tryb CSV').grid(row=0, column=3, sticky='e', padx=(8, 4))
+        mode = ttk.Combobox(sources_frame, textvariable=self.csv_mode, state='readonly', width=18)
         mode['values'] = ('group_list', 'program_list')
-        mode.grid(row=2, column=1, sticky='w')
+        mode.grid(row=0, column=4, sticky='w')
         mode.bind('<<ComboboxSelected>>', lambda event: self.on_csv_mode_changed())
+        ttk.Button(sources_frame, text='Wybierz folder główny projektu', command=self.on_select_root_folder).grid(row=0, column=5, sticky='w', padx=4)
+        ttk.Button(sources_frame, text='Odśwież folder CNC', command=self.on_refresh_root_folder).grid(row=0, column=6, sticky='w', padx=4)
 
-        self.csv_stats = ttk.Label(csv_frame, text='Pliki CSV: 0 | Pozycje CSV (scalone): 0')
-        self.csv_stats.grid(row=3, column=0, columnspan=3, sticky='w', pady=4)
+        self.csv_stats = ttk.Label(sources_frame, text='Pliki CSV: 0')
+        self.csv_stats.grid(row=1, column=0, sticky='w', pady=(6, 0))
+        self.csv_items_stats = ttk.Label(sources_frame, text='Pozycje CSV (scalone): 0')
+        self.csv_items_stats.grid(row=1, column=1, columnspan=2, sticky='w', pady=(6, 0))
+        self.root_label = ttk.Label(sources_frame, text='Folder główny: Brak folderu')
+        self.root_label.grid(row=1, column=3, columnspan=2, sticky='w', pady=(6, 0))
+        self.root_stats = ttk.Label(sources_frame, text='Pliki .TCN: 0 | Grupy A_: 0')
+        self.root_stats.grid(row=1, column=5, columnspan=2, sticky='w', pady=(6, 0))
 
-        root_frame = ttk.LabelFrame(main, text='Folder główny projektu', padding=8)
-        root_frame.pack(fill='x', pady=4)
-
-        ttk.Button(root_frame, text='Wybierz folder główny projektu', command=self.on_select_root_folder).grid(row=0, column=0, sticky='w')
-        self.root_label = ttk.Label(root_frame, text='Brak folderu')
-        self.root_label.grid(row=0, column=1, sticky='w', padx=8)
-
-        self.root_stats = ttk.Label(root_frame, text='Pliki .TCN: 0 | Grupy A_: 0 | Lista: -')
-        self.root_stats.grid(row=1, column=0, columnspan=2, sticky='w', pady=4)
+        csv_list_frame = ttk.LabelFrame(main, text='Lista plików CSV', padding=6)
+        csv_list_frame.grid(row=1, column=0, sticky='ew', pady=4)
+        csv_list_frame.grid_columnconfigure(0, weight=1)
+        csv_list_frame.grid_rowconfigure(0, weight=1)
+        self.csv_listbox = tk.Listbox(csv_list_frame, height=3)
+        self.csv_listbox.grid(row=0, column=0, sticky='ew')
+        csv_list_scroll = ttk.Scrollbar(csv_list_frame, orient='vertical', command=self.csv_listbox.yview)
+        csv_list_scroll.grid(row=0, column=1, sticky='ns')
+        self.csv_listbox.configure(yscrollcommand=csv_list_scroll.set)
 
         scan_frame = ttk.LabelFrame(main, text='Skanowanie', padding=8)
-        scan_frame.pack(fill='both', pady=4)
+        scan_frame.grid(row=2, column=0, sticky='ew', pady=4)
+        scan_frame.grid_columnconfigure(1, weight=1)
 
         ttk.Label(scan_frame, text='Kod QR').grid(row=0, column=0, sticky='w')
-        self.scan_entry = ttk.Entry(scan_frame, width=80)
-        self.scan_entry.grid(row=0, column=1, sticky='we', padx=6)
+        self.scan_entry = ttk.Entry(scan_frame)
+        self.scan_entry.grid(row=0, column=1, sticky='ew', padx=6)
         ttk.Button(scan_frame, text='Dodaj skan', command=self.on_add_scan).grid(row=0, column=2, sticky='w')
-        ttk.Button(scan_frame, text='Usuń zaznaczony skan', command=self.on_remove_selected_scan).grid(row=1, column=2, sticky='w')
-        ttk.Button(scan_frame, text='Wyczyść skany', command=self.on_clear_scans).grid(row=2, column=2, sticky='w', pady=4)
+        ttk.Button(scan_frame, text='Usuń zaznaczony skan', command=self.on_remove_selected_scan).grid(row=0, column=3, sticky='w', padx=4)
+        ttk.Button(scan_frame, text='Wyczyść skany', command=self.on_clear_scans).grid(row=0, column=4, sticky='w')
 
         self.scan_preview = ttk.Label(scan_frame, text='Oryginalny kod: - | group_id: - | program_name: - | compare_id: -')
-        self.scan_preview.grid(row=1, column=0, columnspan=2, sticky='w', pady=4)
+        self.scan_preview.grid(row=1, column=0, columnspan=5, sticky='w', pady=(6, 2))
 
-        self.auto_info = ttk.Label(scan_frame, text='Program porównuje skany automatycznie po każdym skanie.')
-        self.auto_info.grid(row=2, column=0, columnspan=2, sticky='w')
+        scan_list_frame = ttk.Frame(scan_frame)
+        scan_list_frame.grid(row=2, column=0, columnspan=5, sticky='ew')
+        scan_list_frame.grid_columnconfigure(0, weight=1)
+        self.scan_list = tk.Listbox(scan_list_frame, height=4)
+        self.scan_list.grid(row=0, column=0, sticky='ew')
+        scan_scroll = ttk.Scrollbar(scan_list_frame, orient='vertical', command=self.scan_list.yview)
+        scan_scroll.grid(row=0, column=1, sticky='ns')
+        self.scan_list.configure(yscrollcommand=scan_scroll.set)
 
-        self.scan_list = tk.Listbox(scan_frame, height=6)
-        self.scan_list.grid(row=3, column=0, columnspan=3, sticky='nsew', pady=4)
-
-        summary = ttk.LabelFrame(main, text='Podsumowanie', padding=8)
-        summary.pack(fill='x', pady=4)
+        summary = ttk.LabelFrame(main, text='Podsumowanie', padding=6)
+        summary.grid(row=3, column=0, sticky='ew', pady=4)
         self.summary_label = ttk.Label(summary, text='CSV: 0 | CNC: 0 | Skany: 0 | OK: 0 | Problemy: 0')
-        self.summary_label.pack(anchor='w')
+        self.summary_label.grid(row=0, column=0, sticky='w')
 
         live_frame = ttk.LabelFrame(main, text='Bieżąca kontrola CNC', padding=8)
-        live_frame.pack(fill='both', expand=True, pady=4)
+        live_frame.grid(row=4, column=0, sticky='nsew', pady=4)
+        live_frame.grid_rowconfigure(0, weight=1)
+        live_frame.grid_columnconfigure(0, weight=1)
 
         cols = ('scan', 'cnc', 'csv', 'qty', 'csv_length', 'tcn_length', 'csv_width', 'tcn_width', 'csv_thickness', 'tcn_thickness', 'edge', 'dim_status', 'status', 'note')
-        self.live_tree = ttk.Treeview(live_frame, columns=cols, show='headings', height=10)
+        self.live_tree = ttk.Treeview(live_frame, columns=cols, show='headings', height=16)
         self.live_tree.heading('scan', text='Skan')
         self.live_tree.heading('cnc', text='Program CNC')
         self.live_tree.heading('csv', text='Element z CSV')
@@ -115,37 +131,49 @@ class ScannerApp(object):
         self.live_tree.heading('dim_status', text='Kontrola wymiarów')
         self.live_tree.heading('status', text='Status')
         self.live_tree.heading('note', text='Uwagi')
-        self.live_tree.column('scan', width=240)
-        self.live_tree.column('cnc', width=90, anchor='center')
-        self.live_tree.column('csv', width=130, anchor='center')
+        self.live_tree.column('scan', width=220)
+        self.live_tree.column('cnc', width=100, anchor='center')
+        self.live_tree.column('csv', width=140, anchor='center')
         self.live_tree.column('qty', width=90, anchor='center')
-        self.live_tree.column('csv_length', width=70, anchor='center')
-        self.live_tree.column('tcn_length', width=70, anchor='center')
-        self.live_tree.column('csv_width', width=70, anchor='center')
-        self.live_tree.column('tcn_width', width=70, anchor='center')
-        self.live_tree.column('csv_thickness', width=70, anchor='center')
-        self.live_tree.column('tcn_thickness', width=70, anchor='center')
-        self.live_tree.column('edge', width=120)
-        self.live_tree.column('dim_status', width=180)
-        self.live_tree.column('status', width=150)
-        self.live_tree.column('note', width=260)
-        self.live_tree.pack(fill='both', expand=True)
+        self.live_tree.column('note', width=280)
+        self.live_tree.grid(row=0, column=0, sticky='nsew')
+        live_y = ttk.Scrollbar(live_frame, orient='vertical', command=self.live_tree.yview)
+        live_y.grid(row=0, column=1, sticky='ns')
+        live_x = ttk.Scrollbar(live_frame, orient='horizontal', command=self.live_tree.xview)
+        live_x.grid(row=1, column=0, sticky='ew')
+        self.live_tree.configure(yscrollcommand=live_y.set, xscrollcommand=live_x.set)
 
         self.live_tree.tag_configure('ok', background='#c9f7c9')
         self.live_tree.tag_configure('bad', background='#f7c9c9')
         self.live_tree.tag_configure('warn', background='#fff6b3')
         self.live_tree.tag_configure('missing', background='#ffd8a8')
 
-        report_frame = ttk.LabelFrame(main, text='Raporty', padding=8)
-        report_frame.pack(fill='both', expand=True, pady=4)
+        report_frame = ttk.LabelFrame(main, text='Raporty', padding=6)
+        report_frame.grid(row=5, column=0, sticky='ew', pady=4)
+        ttk.Button(report_frame, text='Odśwież porównanie', command=self.on_generate_report).grid(row=0, column=0, sticky='w')
+        ttk.Button(report_frame, text='Eksportuj raport ręcznie', command=self.on_export_report_csv).grid(row=0, column=1, sticky='w', padx=6)
+        self.report_text = tk.Text(report_frame, height=4)
+        self.report_text.grid(row=1, column=0, columnspan=2, sticky='ew', pady=(4, 0))
+        report_scroll = ttk.Scrollbar(report_frame, orient='vertical', command=self.report_text.yview)
+        report_scroll.grid(row=1, column=2, sticky='ns', pady=(4, 0))
+        self.report_text.configure(yscrollcommand=report_scroll.set)
 
-        btn_row = ttk.Frame(report_frame)
-        btn_row.pack(fill='x')
-        ttk.Button(btn_row, text='Odśwież porównanie', command=self.on_generate_report).pack(side='left')
-        ttk.Button(btn_row, text='Eksportuj raport ręcznie', command=self.on_export_report_csv).pack(side='left', padx=8)
-
-        self.report_text = tk.Text(report_frame, height=10)
-        self.report_text.pack(fill='both', expand=True, pady=4)
+        csv_preview_frame = ttk.LabelFrame(main, text='Wczytana lista CSV', padding=6)
+        csv_preview_frame.grid(row=6, column=0, sticky='ew', pady=4)
+        csv_preview_frame.grid_columnconfigure(0, weight=1)
+        csv_cols = ('code', 'group', 'qty', 'length', 'width', 'thickness', 'edge')
+        self.csv_tree = ttk.Treeview(csv_preview_frame, columns=csv_cols, show='headings', height=8)
+        self.csv_tree.heading('code', text='Kod')
+        self.csv_tree.heading('group', text='Grupa')
+        self.csv_tree.heading('qty', text='Ilość')
+        self.csv_tree.heading('length', text='Długość')
+        self.csv_tree.heading('width', text='Szerokość')
+        self.csv_tree.heading('thickness', text='Grubość')
+        self.csv_tree.heading('edge', text='Obrzeże')
+        self.csv_tree.grid(row=0, column=0, sticky='ew')
+        csv_preview_scroll = ttk.Scrollbar(csv_preview_frame, orient='vertical', command=self.csv_tree.yview)
+        csv_preview_scroll.grid(row=0, column=1, sticky='ns')
+        self.csv_tree.configure(yscrollcommand=csv_preview_scroll.set)
 
         self.scan_entry.bind('<Return>', lambda event: self.on_add_scan())
         self.root.after(200, lambda: self.focus_scan_entry(False))
@@ -286,7 +314,7 @@ class ScannerApp(object):
         self.cnc_programs_by_compare_id = {}
         self.cnc_programs_by_name = {}
         if not self.root_folder:
-            self.root_stats.config(text='Pliki .TCN: 0 | Grupy A_: 0 | Lista: -')
+            self.root_stats.config(text='Pliki .TCN: 0 | Grupy A_: 0')
             return
         for base, _, files in os.walk(self.root_folder):
             for filename in files:
@@ -323,7 +351,7 @@ class ScannerApp(object):
                     self.cnc_programs_by_name[filename] = []
                 self.cnc_programs_by_name[filename].append(record)
         groups = sorted(set([r['group_id'] for r in self.cnc_records if r['group_id']]))
-        self.root_stats.config(text='Pliki .TCN: {0} | Grupy A_: {1} | Lista: {2}'.format(len(self.cnc_records), len(groups), ', '.join(groups) if groups else '-'))
+        self.root_stats.config(text='Pliki .TCN: {0} | Grupy A_: {1}'.format(len(self.cnc_records), len(groups)))
 
     def reload_all_csv(self):
         self.merged_counter = Counter()
@@ -379,7 +407,20 @@ class ScannerApp(object):
                     'edge_info': meta.get('edge_info', ''),
                     'note': meta.get('note', '')
                 })
-        self.csv_stats.config(text='Pliki CSV: {0} | Pozycje CSV (scalone): {1}'.format(len(self.csv_files), len(self.merged_project_data)))
+        self.csv_stats.config(text='Pliki CSV: {0}'.format(len(self.csv_files)))
+        self.csv_items_stats.config(text='Pozycje CSV (scalone): {0}'.format(len(self.merged_project_data)))
+        for item in self.csv_tree.get_children():
+            self.csv_tree.delete(item)
+        for row in self.merged_project_data:
+            self.csv_tree.insert('', 'end', values=(
+                row.get('item_code', ''),
+                row.get('group_id', ''),
+                row.get('quantity', ''),
+                row.get('length', ''),
+                row.get('width', ''),
+                row.get('thickness', ''),
+                row.get('edge_info', '')
+            ))
 
     def build_live_rows(self):
         rows = []
@@ -390,7 +431,7 @@ class ScannerApp(object):
             gid = rec.get('group_id', '')
             pbase = rec.get('program_base_name', '')
             csv_item_key = rec.get('csv_item_key', '')
-            scan_label = pbase or cid or gid or pname
+            scan_label = csv_item_key or ((gid + ' ' + pbase).strip() if gid else pbase or pname)
 
             cnc_record = self.cnc_programs_by_compare_id.get(cid)
             cnc_lookup_status = 'COMPARE_ID'
@@ -594,9 +635,14 @@ class ScannerApp(object):
         path = filedialog.askdirectory()
         if path:
             self.root_folder = path
-            self.root_label.config(text=path)
+            self.root_label.config(text='Folder główny: {0}'.format(path))
             self.scan_cnc_folder()
             self.update_live_comparison()
+        self.focus_scan_entry(False)
+
+    def on_refresh_root_folder(self):
+        self.scan_cnc_folder()
+        self.update_live_comparison()
         self.focus_scan_entry(False)
 
     def on_add_scan(self):
@@ -606,7 +652,8 @@ class ScannerApp(object):
             return
         parsed = self.parse_scanned_path(code, self.root_folder)
         self.scan_records.append(parsed)
-        self.scan_list.insert('end', '{0} | {1}'.format(parsed.get('group_id', '-') or '-', parsed.get('program_name', '-') or '-'))
+        scan_key = parsed.get('csv_item_key', '') or (((parsed.get('group_id', '') + ' ' + parsed.get('program_base_name', '')).strip()) if parsed.get('group_id', '') else parsed.get('program_base_name', ''))
+        self.scan_list.insert('end', '{0} | {1}'.format(scan_key or '-', parsed.get('program_name', '-') or '-'))
         self.scan_preview.config(text='Oryginalny kod: {0} | group_id: {1} | program_name: {2} | compare_id: {3} | csv_item_key: {4}'.format(parsed.get('original_code', ''), parsed.get('group_id', ''), parsed.get('program_name', ''), parsed.get('compare_id', ''), parsed.get('csv_item_key', '')))
         self.update_live_comparison()
         self.focus_scan_entry(True)
