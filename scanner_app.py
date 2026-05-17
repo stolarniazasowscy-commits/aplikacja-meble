@@ -31,6 +31,7 @@ class ScannerApp(object):
         self.cnc_records = []
         self.scan_records = []
         self.report_rows = []
+        self.csv_item_meta = {}
 
         self._build_ui()
         self.update_live_comparison()
@@ -95,18 +96,28 @@ class ScannerApp(object):
         live_frame = ttk.LabelFrame(main, text='Bieżąca kontrola CNC', padding=8)
         live_frame.pack(fill='both', expand=True, pady=4)
 
-        cols = ('scan', 'cnc', 'csv', 'status', 'note')
+        cols = ('scan', 'cnc', 'csv', 'qty', 'length', 'width', 'thickness', 'edge', 'status', 'note')
         self.live_tree = ttk.Treeview(live_frame, columns=cols, show='headings', height=10)
         self.live_tree.heading('scan', text='Skan')
         self.live_tree.heading('cnc', text='Program CNC')
         self.live_tree.heading('csv', text='Element z CSV')
+        self.live_tree.heading('qty', text='Ilość z CSV')
+        self.live_tree.heading('length', text='Długość')
+        self.live_tree.heading('width', text='Szerokość')
+        self.live_tree.heading('thickness', text='Grubość')
+        self.live_tree.heading('edge', text='Obrzeże')
         self.live_tree.heading('status', text='Status')
         self.live_tree.heading('note', text='Uwagi')
         self.live_tree.column('scan', width=240)
         self.live_tree.column('cnc', width=90, anchor='center')
-        self.live_tree.column('csv', width=100, anchor='center')
+        self.live_tree.column('csv', width=130, anchor='center')
+        self.live_tree.column('qty', width=90, anchor='center')
+        self.live_tree.column('length', width=80, anchor='center')
+        self.live_tree.column('width', width=80, anchor='center')
+        self.live_tree.column('thickness', width=80, anchor='center')
+        self.live_tree.column('edge', width=120)
         self.live_tree.column('status', width=150)
-        self.live_tree.column('note', width=360)
+        self.live_tree.column('note', width=260)
         self.live_tree.pack(fill='both', expand=True)
 
         self.live_tree.tag_configure('ok', background='#c9f7c9')
@@ -138,10 +149,23 @@ class ScannerApp(object):
             return ''
         return value.strip().strip('"').replace('/', '\\')
 
+    def normalize_item_code(self, value):
+        code = (value or '').strip().upper()
+        if code.endswith('.TCN'):
+            code = code[:-4]
+        return code
+
+    def parse_int(self, value, default_value):
+        try:
+            return int((value or '').strip())
+        except Exception:
+            return default_value
+
     def parse_scanned_path(self, original_code, root_folder):
         clean = self.normalize_path(original_code)
         tokens = [t for t in clean.split('\\') if t]
         program_name = tokens[-1] if tokens else ''
+        program_base_name = self.normalize_item_code(program_name)
         group_id = ''
         for part in tokens:
             if part.upper().startswith('A_'):
@@ -153,6 +177,7 @@ class ScannerApp(object):
             'original_code': original_code,
             'group_id': group_id,
             'program_name': program_name,
+            'program_base_name': program_base_name,
             'compare_id': compare_id
         }
 
@@ -173,89 +198,83 @@ class ScannerApp(object):
                         group_id = part
                         break
                 compare_id = group_id + '\\' + filename if group_id else filename
-                self.cnc_records.append({'group_id': group_id, 'program_name': filename, 'compare_id': compare_id})
+                self.cnc_records.append({'group_id': group_id, 'program_name': filename, 'program_base_name': self.normalize_item_code(filename), 'compare_id': compare_id})
         groups = sorted(set([r['group_id'] for r in self.cnc_records if r['group_id']]))
         self.root_stats.config(text='Pliki .TCN: {0} | Grupy A_: {1} | Lista: {2}'.format(len(self.cnc_records), len(groups), ', '.join(groups) if groups else '-'))
 
     def reload_all_csv(self):
         self.merged_counter = Counter()
         self.merged_project_data = []
+        self.csv_item_meta = {}
         for item in self.csv_files:
             path = item['path']
             if not os.path.isfile(path):
                 continue
             with open(path, 'r') as f:
-                rows = list(csv.reader(f))
-            if not rows:
-                continue
-            header = [h.strip().lower() for h in rows[0]]
-            has_header = ('group_id' in header) or ('compare_id' in header) or ('program_name' in header) or ('quantity' in header)
-            data_rows = rows[1:] if has_header else rows
-            for row in data_rows:
-                if not row:
-                    continue
-                qty = 1
-                if has_header and 'quantity' in header and header.index('quantity') < len(row):
-                    qv = row[header.index('quantity')].strip()
-                    try:
-                        qty = int(qv)
-                    except Exception:
-                        qty = 1
-                if self.csv_mode.get() == 'group_list':
-                    gid = self.normalize_path(row[header.index('group_id')] if has_header and 'group_id' in header and header.index('group_id') < len(row) else row[0])
-                    if gid:
-                        self.merged_counter[('group', gid)] += qty
-                else:
-                    cid = ''
-                    pname = ''
-                    if has_header and 'compare_id' in header and header.index('compare_id') < len(row):
-                        cid = self.normalize_path(row[header.index('compare_id')])
-                    if has_header and 'program_name' in header and header.index('program_name') < len(row):
-                        pname = self.normalize_path(row[header.index('program_name')])
-                    if not cid and row:
-                        cid = self.normalize_path(row[0])
-                    if not pname:
-                        pname = cid.split('\\')[-1] if cid else ''
-                    key = cid or pname
-                    if key:
-                        self.merged_counter[('program', key)] += qty
-        if self.csv_mode.get() == 'group_list':
-            for key, val in self.merged_counter.items():
-                if key[0] == 'group':
-                    self.merged_project_data.append({'group_id': key[1], 'expected_count': val})
-        else:
-            for key, val in self.merged_counter.items():
-                if key[0] == 'program':
-                    self.merged_project_data.append({'lookup': key[1], 'expected_count': val})
+                reader = csv.reader(f, delimiter=';')
+                for row in reader:
+                    if not row:
+                        continue
+                    if not ''.join(row).strip():
+                        continue
+                    item_code = self.normalize_item_code(row[0] if len(row) > 0 else '')
+                    if not item_code:
+                        continue
+                    group_id = (row[1] if len(row) > 1 else '').strip()
+                    quantity = self.parse_int(row[4] if len(row) > 4 else '', 1)
+                    length = (row[5] if len(row) > 5 else '').strip()
+                    width = (row[6] if len(row) > 6 else '').strip()
+                    thickness = (row[7] if len(row) > 7 else '').strip()
+                    edge_info = (row[8] if len(row) > 8 else '').strip()
+
+                    self.merged_counter[('item', item_code)] += quantity
+                    if item_code not in self.csv_item_meta:
+                        self.csv_item_meta[item_code] = {
+                            'item_code': item_code,
+                            'group_id': group_id,
+                            'length': length,
+                            'width': width,
+                            'thickness': thickness,
+                            'edge_info': edge_info,
+                            'note': ''
+                        }
+                    else:
+                        meta = self.csv_item_meta[item_code]
+                        if (meta.get('length', '') != length) or (meta.get('width', '') != width) or (meta.get('thickness', '') != thickness):
+                            meta['note'] = 'Ten sam kod ma różne wymiary w CSV'
+        for key, val in self.merged_counter.items():
+            if key[0] == 'item':
+                meta = self.csv_item_meta.get(key[1], {})
+                self.merged_project_data.append({
+                    'item_code': key[1],
+                    'group_id': meta.get('group_id', ''),
+                    'quantity': val,
+                    'length': meta.get('length', ''),
+                    'width': meta.get('width', ''),
+                    'thickness': meta.get('thickness', ''),
+                    'edge_info': meta.get('edge_info', ''),
+                    'note': meta.get('note', '')
+                })
         self.csv_stats.config(text='Pliki CSV: {0} | Pozycje CSV (scalone): {1}'.format(len(self.csv_files), len(self.merged_project_data)))
 
     def build_live_rows(self):
         rows = []
-        scans_by_compare = Counter([s.get('compare_id', '') for s in self.scan_records if s.get('compare_id')])
-        scans_by_group = Counter([s.get('group_id', '') for s in self.scan_records if s.get('group_id')])
+        scans_by_program_base = Counter([s.get('program_base_name', '') for s in self.scan_records if s.get('program_base_name')])
         for rec in self.scan_records:
             cid = rec.get('compare_id', '')
             pname = rec.get('program_name', '')
             gid = rec.get('group_id', '')
-            scan_label = cid or gid or pname
+            pbase = rec.get('program_base_name', '')
+            scan_label = pbase or cid or gid or pname
 
             exists_in_cnc = False
-            if cid:
-                exists_in_cnc = any([x for x in self.cnc_records if x['compare_id'] == cid])
-            if (not exists_in_cnc) and pname:
-                exists_in_cnc = any([x for x in self.cnc_records if x['program_name'] == pname])
+            if pbase:
+                exists_in_cnc = any([x for x in self.cnc_records if x.get('program_base_name', '') == pbase])
 
-            exists_in_csv = False
-            expected = 0
-            scanned_count = scans_by_compare.get(cid, 0) if cid else 0
-            if self.csv_mode.get() == 'group_list':
-                exists_in_csv = ('group', gid) in self.merged_counter
-                expected = self.merged_counter.get(('group', gid), 0)
-                scanned_count = scans_by_group.get(gid, 0)
-            else:
-                key = cid or pname
-                exists_in_csv = ('program', key) in self.merged_counter
-                expected = self.merged_counter.get(('program', key), 0)
+            exists_in_csv = ('item', pbase) in self.merged_counter
+            expected = self.merged_counter.get(('item', pbase), 0)
+            scanned_count = scans_by_program_base.get(pbase, 0) if pbase else 0
+            meta = self.csv_item_meta.get(pbase, {})
 
             status = 'OK'
             note = 'Skan istnieje w CNC i CSV'
@@ -278,12 +297,17 @@ class ScannerApp(object):
                 'group_id': gid,
                 'program_name': pname,
                 'compare_id': cid,
+                'item_code': pbase,
+                'quantity': expected,
+                'length': meta.get('length', ''),
+                'width': meta.get('width', ''),
+                'thickness': meta.get('thickness', ''),
+                'edge_info': meta.get('edge_info', ''),
                 'exists_in_cnc': 'TAK' if exists_in_cnc else 'BRAK',
                 'exists_in_csv': 'TAK' if exists_in_csv else 'BRAK',
                 'scanned_count': scanned_count,
-                'expected_count': expected,
                 'status': status,
-                'note': note,
+                'note': (meta.get('note', '') + ' | ' + note).strip(' |'),
                 'scan_label': scan_label
             })
         return rows
@@ -304,18 +328,17 @@ class ScannerApp(object):
                 tag = 'bad'
             else:
                 ok_count += 1
-            self.live_tree.insert('', 'end', values=(row['scan_label'], row['exists_in_cnc'], row['exists_in_csv'], row['status'], row['note']), tags=(tag,))
+            self.live_tree.insert('', 'end', values=(row['scan_label'], row['exists_in_cnc'], row.get('item_code', ''), row.get('quantity', 0), row.get('length', ''), row.get('width', ''), row.get('thickness', ''), row.get('edge_info', ''), row['status'], row['note']), tags=(tag,))
 
         problem_count = len(self.report_rows) - ok_count
         self.summary_label.config(text='CSV: {0} | CNC: {1} | Skany: {2} | OK: {3} | Problemy: {4}'.format(len(self.merged_project_data), len(self.cnc_records), len(self.scan_records), ok_count, problem_count))
 
         missing_lines = []
-        if self.csv_mode.get() == 'group_list':
-            scanned_by_group = Counter([r.get('group_id', '') for r in self.scan_records if r.get('group_id')])
-            for item in self.merged_project_data:
-                gid = item['group_id']
-                if scanned_by_group.get(gid, 0) < item['expected_count']:
-                    missing_lines.append('{0}: BRAKUJE ({1}/{2})'.format(gid, scanned_by_group.get(gid, 0), item['expected_count']))
+        for item in self.merged_project_data:
+            code = item.get('item_code', '')
+            scanned = Counter([r.get('program_base_name', '') for r in self.scan_records]).get(code, 0)
+            if scanned < item.get('quantity', 0):
+                missing_lines.append('{0}: BRAKUJE ({1}/{2})'.format(code, scanned, item.get('quantity', 0)))
         self.report_text.delete('1.0', 'end')
         self.report_text.insert('1.0', '\n'.join(missing_lines) if missing_lines else 'Brak pozycji BRAKUJE.')
 
@@ -344,7 +367,7 @@ class ScannerApp(object):
         self.report_text.insert('1.0', 'Raport sesji zapisany: {0}'.format(path))
 
     def write_report_csv(self, save_path):
-        fields = ['timestamp', 'original_code', 'group_id', 'program_name', 'compare_id', 'exists_in_cnc', 'exists_in_csv', 'scanned_count', 'expected_count', 'status', 'note']
+        fields = ['item_code', 'group_id', 'quantity', 'length', 'width', 'thickness', 'edge_info', 'exists_in_cnc', 'scanned_count', 'status', 'note']
         with open(save_path, 'w') as f:
             writer = csv.DictWriter(f, fieldnames=fields)
             writer.writeheader()
