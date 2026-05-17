@@ -160,17 +160,24 @@ class ScannerApp(object):
         return value.strip().strip('"').replace('/', '\\')
 
     def normalize_item_code(self, value):
-        code = (value or '').strip().upper()
+        code = (value or '').strip().strip('\"').upper()
         if code.endswith('.TCN'):
             code = code[:-4]
-        return code
+        return code.strip()
 
     def build_csv_item_key(self, group_id, program_name):
         clean_group_id = (group_id or '').strip().upper()
         program_base_name = self.normalize_item_code(program_name)
-        if clean_group_id and program_base_name:
+        if not clean_group_id:
+            return program_base_name
+        prefix = clean_group_id + ' '
+        if program_base_name.startswith(prefix):
+            return program_base_name
+        if program_base_name == clean_group_id:
+            return clean_group_id
+        if program_base_name:
             return clean_group_id + ' ' + program_base_name
-        return clean_group_id or program_base_name
+        return clean_group_id
 
     def parse_int(self, value, default_value):
         try:
@@ -309,9 +316,9 @@ class ScannerApp(object):
                         continue
                     if not ''.join(row).strip():
                         continue
-                    group_id = (row[1] if len(row) > 1 else '').strip()
-                    item_code = self.normalize_item_code(row[0] if len(row) > 0 else '')
-                    item_code = self.build_csv_item_key(group_id, item_code)
+                    group_id = self.normalize_item_code(row[1] if len(row) > 1 else '')
+                    raw_item_code = row[0] if len(row) > 0 else ''
+                    item_code = self.build_csv_item_key(group_id, raw_item_code)
                     if not item_code:
                         continue
                     quantity = self.parse_int(row[4] if len(row) > 4 else '', 1)
@@ -443,7 +450,7 @@ class ScannerApp(object):
                 'exists_in_csv': 'TAK' if exists_in_csv else 'BRAK',
                 'scanned_count': scanned_count,
                 'status': status,
-                'note': (meta.get('note', '') + ' | ' + note + ' | ' + dim_note).strip(' |'),
+                'note': (meta.get('note', '') + ' | ' + note + ' | ' + dim_note + ' | CSV key: {0}'.format(csv_item_key)).strip(' |'),
                 'scan_label': scan_label
             })
         return rows
@@ -467,7 +474,7 @@ class ScannerApp(object):
                 tag = 'bad'
             else:
                 ok_count += 1
-            self.live_tree.insert('', 'end', values=(row['scan_label'], row['exists_in_cnc'], row.get('item_code', ''), row.get('quantity', 0), row.get('csv_length', ''), row.get('tcn_length', ''), row.get('csv_width', ''), row.get('tcn_width', ''), row.get('csv_thickness', ''), row.get('tcn_thickness', ''), row.get('edge_info', ''), row.get('dim_status', ''), row['status'], row['note']), tags=(tag,))
+            self.live_tree.insert('', 'end', values=(row['scan_label'], row.get('program_name', ''), row.get('item_code', ''), row.get('quantity', 0), row.get('csv_length', ''), row.get('tcn_length', ''), row.get('csv_width', ''), row.get('tcn_width', ''), row.get('csv_thickness', ''), row.get('tcn_thickness', ''), row.get('edge_info', ''), row.get('dim_status', ''), row['status'], row['note']), tags=(tag,))
 
         problem_count = len(self.report_rows) - ok_count
         self.summary_label.config(text='CSV: {0} | CNC: {1} | Skany: {2} | OK: {3} | Problemy: {4}'.format(len(self.merged_project_data), len(self.cnc_records), len(self.scan_records), ok_count, problem_count))
