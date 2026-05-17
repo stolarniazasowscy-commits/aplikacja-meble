@@ -50,17 +50,30 @@ class ScannerApp(object):
         main.grid_rowconfigure(4, weight=1)
         main.grid_columnconfigure(0, weight=1)
 
-        self.compact_font = tkfont.Font(size=8)
-        self.table_font = tkfont.Font(size=10)
-        self.table_head_font = tkfont.Font(size=10, weight='bold')
+        self.compact_font = tkfont.Font(family='Segoe UI', size=8)
         style = ttk.Style()
         style.configure('Compact.TButton', font=self.compact_font, padding=(2, 1))
         style.configure('Compact.TLabel', font=self.compact_font)
         style.configure('Compact.TLabelframe.Label', font=self.compact_font)
-        style.configure('Compact.Treeview', font=self.compact_font, rowheight=16)
-        style.configure('Compact.Treeview.Heading', font=self.compact_font)
-        style.configure('Live.Treeview', font=self.table_font, rowheight=18)
-        style.configure('Live.Treeview.Heading', font=self.table_head_font)
+        style.configure('TEntry', font=self.compact_font)
+        style.configure(
+            'Treeview',
+            font=('Segoe UI', 9),
+            rowheight=18
+        )
+        style.configure(
+            'Treeview.Heading',
+            font=('Segoe UI', 9, 'bold')
+        )
+        style.configure(
+            'Small.Treeview',
+            font=('Segoe UI', 8),
+            rowheight=16
+        )
+        style.configure(
+            'Small.Treeview.Heading',
+            font=('Segoe UI', 8, 'bold')
+        )
 
         sources_frame = ttk.LabelFrame(main, text='Źródła danych', padding=4, style='Compact.TLabelframe')
         sources_frame.grid(row=0, column=0, sticky='ew', pady=2)
@@ -90,7 +103,7 @@ class ScannerApp(object):
         csv_list_frame = ttk.LabelFrame(main, text='Lista plików CSV', padding=4, style='Compact.TLabelframe')
         csv_list_frame.grid(row=1, column=0, sticky='ew', pady=2)
         csv_list_frame.grid_columnconfigure(0, weight=1)
-        self.csv_listbox = tk.Listbox(csv_list_frame, height=2, font=self.compact_font)
+        self.csv_listbox = tk.Listbox(csv_list_frame, height=3, font=self.compact_font)
         self.csv_listbox.grid(row=0, column=0, sticky='ew')
         csv_list_scroll = ttk.Scrollbar(csv_list_frame, orient='vertical', command=self.csv_listbox.yview)
         csv_list_scroll.grid(row=0, column=1, sticky='ns')
@@ -113,7 +126,7 @@ class ScannerApp(object):
         scan_list_frame = ttk.Frame(scan_frame)
         scan_list_frame.grid(row=2, column=0, columnspan=5, sticky='ew')
         scan_list_frame.grid_columnconfigure(0, weight=1)
-        self.scan_list = tk.Listbox(scan_list_frame, height=3, font=self.compact_font)
+        self.scan_list = tk.Listbox(scan_list_frame, height=4, font=self.compact_font)
         self.scan_list.grid(row=0, column=0, sticky='ew')
         scan_scroll = ttk.Scrollbar(scan_list_frame, orient='vertical', command=self.scan_list.yview)
         scan_scroll.grid(row=0, column=1, sticky='ns')
@@ -130,7 +143,7 @@ class ScannerApp(object):
         live_frame.grid_columnconfigure(0, weight=1)
 
         cols = ('nr', 'scan', 'cnc', 'csv', 'qty', 'csv_length', 'tcn_length', 'csv_width', 'tcn_width', 'csv_thickness', 'tcn_thickness', 'edge', 'dim_status', 'status', 'note')
-        self.live_tree = ttk.Treeview(live_frame, columns=cols, show='headings', height=12, style='Live.Treeview')
+        self.live_tree = ttk.Treeview(live_frame, columns=cols, show='headings', height=12, style='Treeview')
         self.live_tree.heading('nr', text='Nr')
         self.live_tree.heading('scan', text='Skan')
         self.live_tree.heading('cnc', text='Program CNC')
@@ -187,7 +200,7 @@ class ScannerApp(object):
         csv_preview_frame.grid(row=6, column=0, sticky='ew', pady=2)
         csv_preview_frame.grid_columnconfigure(0, weight=1)
         csv_cols = ('nr', 'code', 'group', 'qty', 'length', 'width', 'thickness', 'edge')
-        self.csv_tree = ttk.Treeview(csv_preview_frame, columns=csv_cols, show='headings', height=3, style='Compact.Treeview')
+        self.csv_tree = ttk.Treeview(csv_preview_frame, columns=csv_cols, show='headings', height=4, style='Small.Treeview')
         self.csv_tree.heading('nr', text='Nr')
         self.csv_tree.heading('code', text='Kod')
         self.csv_tree.heading('group', text='Grupa')
