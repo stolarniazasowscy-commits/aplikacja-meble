@@ -178,6 +178,11 @@ class ScannerApp(object):
         except Exception:
             return None
 
+    def round_mm(self, value):
+        if value is None:
+            return None
+        return int(round(value))
+
     def extract_tcn_dimensions(self, file_path):
         result = {
             'length': None,
@@ -276,7 +281,7 @@ class ScannerApp(object):
                 dims = self.extract_tcn_dimensions(file_path)
                 program_base_name = self.normalize_item_code(filename)
                 self.cnc_dimensions_by_base[program_base_name] = dims
-                self.cnc_records.append({'group_id': group_id, 'program_name': filename, 'program_base_name': program_base_name, 'compare_id': compare_id, 'tcn_length': dims.get('length'), 'tcn_width': dims.get('width'), 'tcn_thickness': dims.get('thickness'), 'tcn_parse_status': dims.get('parse_status')})
+                self.cnc_records.append({'group_id': group_id, 'program_name': filename, 'program_base_name': program_base_name, 'compare_id': compare_id, 'tcn_length': self.round_mm(dims.get('length')), 'tcn_width': self.round_mm(dims.get('width')), 'tcn_thickness': self.round_mm(dims.get('thickness')), 'tcn_parse_status': dims.get('parse_status')})
         groups = sorted(set([r['group_id'] for r in self.cnc_records if r['group_id']]))
         self.root_stats.config(text='Pliki .TCN: {0} | Grupy A_: {1} | Lista: {2}'.format(len(self.cnc_records), len(groups), ', '.join(groups) if groups else '-'))
 
@@ -357,39 +362,37 @@ class ScannerApp(object):
             status = 'OK'
             note = 'Skan istnieje w CNC i CSV'
             dim_status = 'BRAK WYMIARÓW TCN'
-            dim_note_parts = []
+            dim_note = 'Brak wymiarów w TCN'
             tcn_data = self.cnc_dimensions_by_base.get(pbase, {})
-            tcn_length = tcn_data.get('length')
-            tcn_width = tcn_data.get('width')
-            tcn_thickness = tcn_data.get('thickness')
+            tcn_length_raw = tcn_data.get('length')
+            tcn_width_raw = tcn_data.get('width')
+            tcn_thickness_raw = tcn_data.get('thickness')
+            tcn_length = self.round_mm(tcn_length_raw)
+            tcn_width = self.round_mm(tcn_width_raw)
+            tcn_thickness = self.round_mm(tcn_thickness_raw)
             tcn_parse_status = tcn_data.get('parse_status', 'ERROR')
-            tol = 0.5
+            tol = 1
 
-            csv_length = self.parse_float(meta.get('length', ''))
-            csv_width = self.parse_float(meta.get('width', ''))
-            csv_thickness = self.parse_float(meta.get('thickness', ''))
+            csv_length = self.round_mm(self.parse_float(meta.get('length', '')))
+            csv_width = self.round_mm(self.parse_float(meta.get('width', '')))
+            csv_thickness = self.round_mm(self.parse_float(meta.get('thickness', '')))
 
             if tcn_parse_status == 'OK' and tcn_length is not None and tcn_width is not None and tcn_thickness is not None:
-                problems = []
-                if csv_length is not None and abs(csv_length - tcn_length) <= tol:
-                    dim_note_parts.append('Długość OK')
+                length_bad = csv_length is None or abs(csv_length - tcn_length) > tol
+                width_bad = csv_width is None or abs(csv_width - tcn_width) > tol
+                thickness_bad = csv_thickness is None or csv_thickness != tcn_thickness
+                if length_bad or width_bad:
+                    dim_status = 'RÓŻNICA WYMIARÓW INFO'
+                    if length_bad:
+                        dim_note = 'Różnica długości > 1 mm'
+                    else:
+                        dim_note = 'Różnica szerokości > 1 mm'
+                elif thickness_bad:
+                    dim_status = 'UWAGA GRUBOŚĆ'
+                    dim_note = 'Różnica grubości: CSV {0} / TCN {1}. UWAGA: grubość TCN różni się od CSV'.format(csv_thickness, tcn_thickness)
                 else:
-                    problems.append('RÓŻNA DŁUGOŚĆ')
-                    dim_note_parts.append('Różna długość')
-                if csv_width is not None and abs(csv_width - tcn_width) <= tol:
-                    dim_note_parts.append('Szerokość OK')
-                else:
-                    problems.append('RÓŻNA SZEROKOŚĆ')
-                    dim_note_parts.append('Różna szerokość')
-                if csv_thickness is not None and abs(csv_thickness - tcn_thickness) <= tol:
-                    dim_note_parts.append('Grubość OK')
-                else:
-                    problems.append('RÓŻNA GRUBOŚĆ')
-                    dim_note_parts.append('Różna grubość')
-
-                dim_status = 'WYMIARY OK' if not problems else ', '.join(problems)
-            else:
-                dim_note_parts.append('Brak wymiarów TCN')
+                    dim_status = 'WYMIARY OK'
+                    dim_note = 'Długość/szerokość w tolerancji 1 mm'
             if not exists_in_cnc and not exists_in_csv:
                 status = 'NIEZNANY'
                 note = 'Skan nie występuje w CNC ani CSV'
@@ -403,8 +406,6 @@ class ScannerApp(object):
                 status = 'ZA DUŻO' if scanned_count > expected + 1 else 'DUPLIKAT'
                 note = 'Zeskanowano więcej razy niż wymagane'
 
-            if dim_status != 'WYMIARY OK' and status == 'OK':
-                status = '[BŁĄD]'
             rows.append({
                 'timestamp': rec.get('timestamp', ''),
                 'original_code': rec.get('original_code', ''),
@@ -416,17 +417,22 @@ class ScannerApp(object):
                 'length': meta.get('length', ''),
                 'width': meta.get('width', ''),
                 'thickness': meta.get('thickness', ''),
+                'csv_length': csv_length if csv_length is not None else '',
+                'csv_width': csv_width if csv_width is not None else '',
+                'csv_thickness': csv_thickness if csv_thickness is not None else '',
                 'tcn_length': tcn_length,
                 'tcn_width': tcn_width,
                 'tcn_thickness': tcn_thickness,
                 'tcn_parse_status': tcn_parse_status,
                 'dim_status': dim_status,
+                'dimension_status': dim_status,
+                'dimension_note': dim_note,
                 'edge_info': meta.get('edge_info', ''),
                 'exists_in_cnc': 'TAK' if exists_in_cnc else 'BRAK',
                 'exists_in_csv': 'TAK' if exists_in_csv else 'BRAK',
                 'scanned_count': scanned_count,
                 'status': status,
-                'note': (meta.get('note', '') + ' | ' + note + ' | ' + ', '.join(dim_note_parts)).strip(' |'),
+                'note': (meta.get('note', '') + ' | ' + note + ' | ' + dim_note).strip(' |'),
                 'scan_label': scan_label
             })
         return rows
@@ -438,8 +444,11 @@ class ScannerApp(object):
         ok_count = 0
         for row in self.report_rows:
             status = row['status']
+            dim_status = row.get('dim_status', '')
             tag = 'ok'
-            if status in ('DUPLIKAT',):
+            if dim_status == 'UWAGA GRUBOŚĆ':
+                tag = 'warn'
+            elif status in ('DUPLIKAT',):
                 tag = 'warn'
             elif status in ('BRAKUJE',):
                 tag = 'missing'
@@ -447,7 +456,7 @@ class ScannerApp(object):
                 tag = 'bad'
             else:
                 ok_count += 1
-            self.live_tree.insert('', 'end', values=(row['scan_label'], row['exists_in_cnc'], row.get('item_code', ''), row.get('quantity', 0), row.get('length', ''), row.get('tcn_length', ''), row.get('width', ''), row.get('tcn_width', ''), row.get('thickness', ''), row.get('tcn_thickness', ''), row.get('edge_info', ''), row.get('dim_status', ''), row['status'], row['note']), tags=(tag,))
+            self.live_tree.insert('', 'end', values=(row['scan_label'], row['exists_in_cnc'], row.get('item_code', ''), row.get('quantity', 0), row.get('csv_length', ''), row.get('tcn_length', ''), row.get('csv_width', ''), row.get('tcn_width', ''), row.get('csv_thickness', ''), row.get('tcn_thickness', ''), row.get('edge_info', ''), row.get('dim_status', ''), row['status'], row['note']), tags=(tag,))
 
         problem_count = len(self.report_rows) - ok_count
         self.summary_label.config(text='CSV: {0} | CNC: {1} | Skany: {2} | OK: {3} | Problemy: {4}'.format(len(self.merged_project_data), len(self.cnc_records), len(self.scan_records), ok_count, problem_count))
@@ -486,7 +495,7 @@ class ScannerApp(object):
         self.report_text.insert('1.0', 'Raport sesji zapisany: {0}'.format(path))
 
     def write_report_csv(self, save_path):
-        fields = ['item_code', 'group_id', 'quantity', 'length', 'tcn_length', 'width', 'tcn_width', 'thickness', 'tcn_thickness', 'tcn_parse_status', 'dim_status', 'edge_info', 'exists_in_cnc', 'scanned_count', 'status', 'note']
+        fields = ['item_code', 'group_id', 'quantity', 'csv_length', 'tcn_length', 'csv_width', 'tcn_width', 'csv_thickness', 'tcn_thickness', 'tcn_parse_status', 'dimension_status', 'dimension_note', 'edge_info', 'exists_in_cnc', 'scanned_count', 'status', 'note']
         with open(save_path, 'w') as f:
             writer = csv.DictWriter(f, fieldnames=fields)
             writer.writeheader()
