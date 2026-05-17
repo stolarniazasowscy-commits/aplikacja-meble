@@ -30,7 +30,8 @@ class ScannerApp(object):
         self.merged_project_data = []
         self.merged_counter = Counter()
         self.cnc_records = []
-        self.cnc_dimensions_by_base = {}
+        self.cnc_programs_by_compare_id = {}
+        self.cnc_programs_by_name = {}
         self.scan_records = []
         self.report_rows = []
         self.csv_item_meta = {}
@@ -282,7 +283,8 @@ class ScannerApp(object):
 
     def scan_cnc_folder(self):
         self.cnc_records = []
-        self.cnc_dimensions_by_base = {}
+        self.cnc_programs_by_compare_id = {}
+        self.cnc_programs_by_name = {}
         if not self.root_folder:
             self.root_stats.config(text='Pliki .TCN: 0 | Grupy A_: 0 | Lista: -')
             return
@@ -301,8 +303,25 @@ class ScannerApp(object):
                 file_path = os.path.join(base, filename)
                 dims = self.extract_tcn_dimensions(file_path)
                 program_base_name = self.normalize_item_code(filename)
-                self.cnc_dimensions_by_base[program_base_name] = dims
-                self.cnc_records.append({'group_id': group_id, 'program_name': filename, 'program_base_name': program_base_name, 'compare_id': compare_id, 'tcn_length': self.round_mm(dims.get('length')), 'tcn_width': self.round_mm(dims.get('width')), 'tcn_thickness': self.round_mm(dims.get('thickness')), 'tcn_parse_status': dims.get('parse_status'), 'tcn_dimension_source_line': dims.get('source_line', '')})
+                record = {
+                    'full_path': file_path,
+                    'relative_path': rel,
+                    'group_id': group_id,
+                    'program_name': filename,
+                    'program_base_name': program_base_name,
+                    'compare_id': compare_id,
+                    'csv_item_key': self.build_csv_item_key(group_id, filename),
+                    'tcn_length': self.round_mm(dims.get('length')),
+                    'tcn_width': self.round_mm(dims.get('width')),
+                    'tcn_thickness': self.round_mm(dims.get('thickness')),
+                    'tcn_parse_status': dims.get('parse_status'),
+                    'tcn_dimension_source_line': dims.get('source_line', '')
+                }
+                self.cnc_records.append(record)
+                self.cnc_programs_by_compare_id[compare_id] = record
+                if filename not in self.cnc_programs_by_name:
+                    self.cnc_programs_by_name[filename] = []
+                self.cnc_programs_by_name[filename].append(record)
         groups = sorted(set([r['group_id'] for r in self.cnc_records if r['group_id']]))
         self.root_stats.config(text='Pliki .TCN: {0} | Grupy A_: {1} | Lista: {2}'.format(len(self.cnc_records), len(groups), ', '.join(groups) if groups else '-'))
 
@@ -373,9 +392,16 @@ class ScannerApp(object):
             csv_item_key = rec.get('csv_item_key', '')
             scan_label = pbase or cid or gid or pname
 
-            exists_in_cnc = False
-            if pbase:
-                exists_in_cnc = any([x for x in self.cnc_records if x.get('program_base_name', '') == pbase])
+            cnc_record = self.cnc_programs_by_compare_id.get(cid)
+            cnc_lookup_status = 'COMPARE_ID'
+            if not cnc_record:
+                by_name = self.cnc_programs_by_name.get(pname, [])
+                if len(by_name) == 1:
+                    cnc_record = by_name[0]
+                    cnc_lookup_status = 'PROGRAM_NAME_FALLBACK'
+                elif len(by_name) > 1:
+                    cnc_lookup_status = 'PROGRAM_NAME_AMBIGUOUS'
+            exists_in_cnc = cnc_record is not None
 
             exists_in_csv = ('item', csv_item_key) in self.merged_counter
             expected = self.merged_counter.get(('item', csv_item_key), 0)
@@ -386,15 +412,12 @@ class ScannerApp(object):
             note = 'Skan istnieje w CNC i CSV'
             dim_status = 'BRAK WYMIARÓW TCN'
             dim_note = 'Brak wymiarów w TCN'
-            tcn_data = self.cnc_dimensions_by_base.get(pbase, {})
-            tcn_length_raw = tcn_data.get('length')
-            tcn_width_raw = tcn_data.get('width')
-            tcn_thickness_raw = tcn_data.get('thickness')
-            tcn_length = self.round_mm(tcn_length_raw)
-            tcn_width = self.round_mm(tcn_width_raw)
-            tcn_thickness = self.round_mm(tcn_thickness_raw)
-            tcn_parse_status = tcn_data.get('parse_status', 'ERROR')
-            tcn_source_line = tcn_data.get('source_line', '')
+            tcn_length = cnc_record.get('tcn_length') if cnc_record else None
+            tcn_width = cnc_record.get('tcn_width') if cnc_record else None
+            tcn_thickness = cnc_record.get('tcn_thickness') if cnc_record else None
+            tcn_parse_status = cnc_record.get('tcn_parse_status', 'ERROR') if cnc_record else 'ERROR'
+            tcn_source_line = cnc_record.get('tcn_dimension_source_line', '') if cnc_record else ''
+            tcn_path = cnc_record.get('full_path', '') if cnc_record else ''
             tol = 1
 
             csv_length = self.round_mm(self.parse_float(meta.get('length', '')))
@@ -421,8 +444,12 @@ class ScannerApp(object):
                 status = 'NIEZNANY'
                 note = 'Skan nie występuje w CNC ani CSV'
             elif not exists_in_cnc:
-                status = 'BRAK PROGRAMU CNC'
-                note = 'Skan nie ma programu w folderze CNC'
+                if cnc_lookup_status == 'PROGRAM_NAME_AMBIGUOUS':
+                    status = 'NIEJEDNOZNACZNY PROGRAM CNC'
+                    note = 'Program name występuje w wielu grupach, wymagany compare_id'
+                else:
+                    status = 'BRAK PROGRAMU CNC'
+                    note = 'Skan nie ma programu w folderze CNC'
             elif not exists_in_csv:
                 status = 'BRAK W CSV'
                 note = 'Skan nie występuje w żadnym CSV'
@@ -457,7 +484,7 @@ class ScannerApp(object):
                 'exists_in_csv': 'TAK' if exists_in_csv else 'BRAK',
                 'scanned_count': scanned_count,
                 'status': status,
-                'note': (meta.get('note', '') + ' | ' + note + ' | ' + dim_note + ' | TCN line: {0} | CSV key: {1}'.format(tcn_source_line, csv_item_key)).strip(' |'),
+                'note': (meta.get('note', '') + ' | ' + note + ' | ' + dim_note + ' | compare_id: {0} | TCN path: {1} | TCN line: {2} | CSV key: {3}'.format(cid, tcn_path, tcn_source_line, csv_item_key)).strip(' |'),
                 'scan_label': scan_label
             })
         return rows
@@ -477,7 +504,7 @@ class ScannerApp(object):
                 tag = 'warn'
             elif status in ('BRAKUJE',):
                 tag = 'missing'
-            elif status in ('BRAK PROGRAMU CNC', 'BRAK W CSV', 'NIEZNANY', 'ZA DUŻO'):
+            elif status in ('BRAK PROGRAMU CNC', 'NIEJEDNOZNACZNY PROGRAM CNC', 'BRAK W CSV', 'NIEZNANY', 'ZA DUŻO'):
                 tag = 'bad'
             else:
                 ok_count += 1
@@ -520,7 +547,7 @@ class ScannerApp(object):
         self.report_text.insert('1.0', 'Raport sesji zapisany: {0}'.format(path))
 
     def write_report_csv(self, save_path):
-        fields = ['item_code', 'group_id', 'quantity', 'csv_length', 'tcn_length', 'csv_width', 'tcn_width', 'csv_thickness', 'tcn_thickness', 'tcn_parse_status', 'dimension_status', 'dimension_note', 'edge_info', 'exists_in_cnc', 'scanned_count', 'status', 'note']
+        fields = ['compare_id', 'program_name', 'item_code', 'group_id', 'quantity', 'csv_length', 'tcn_length', 'csv_width', 'tcn_width', 'csv_thickness', 'tcn_thickness', 'tcn_parse_status', 'dimension_status', 'dimension_note', 'edge_info', 'exists_in_cnc', 'scanned_count', 'status', 'note']
         with open(save_path, 'w') as f:
             writer = csv.DictWriter(f, fieldnames=fields)
             writer.writeheader()
