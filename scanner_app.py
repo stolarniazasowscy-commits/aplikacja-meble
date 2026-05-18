@@ -52,23 +52,20 @@ class ScannerApp(object):
 
         self.compact_font = tkfont.Font(family='Segoe UI', size=8)
         style = ttk.Style()
-        style.configure('Compact.TButton', font=self.compact_font, padding=(2, 1))
-        style.configure('Compact.TLabel', font=self.compact_font)
         style.configure('Compact.TLabelframe.Label', font=self.compact_font)
-        style.configure('TEntry', font=self.compact_font)
         style.configure(
-            'Treeview',
+            'Main.Treeview',
             font=('Segoe UI', 9),
             rowheight=18
         )
         style.configure(
-            'Treeview.Heading',
+            'Main.Treeview.Heading',
             font=('Segoe UI', 9, 'bold')
         )
         style.configure(
             'Small.Treeview',
             font=('Segoe UI', 8),
-            rowheight=16
+            rowheight=15
         )
         style.configure(
             'Small.Treeview.Heading',
@@ -79,25 +76,25 @@ class ScannerApp(object):
         sources_frame.grid(row=0, column=0, sticky='ew', pady=2)
         sources_frame.grid_columnconfigure(6, weight=1)
 
-        ttk.Button(sources_frame, text='Dodaj CSV projektu', command=self.on_add_csv, style='Compact.TButton').grid(row=0, column=0, sticky='w', padx=2, pady=2)
-        ttk.Button(sources_frame, text='Usuń zaznaczony CSV', command=self.on_remove_selected_csv, style='Compact.TButton').grid(row=0, column=1, sticky='w', padx=2, pady=2)
-        ttk.Button(sources_frame, text='Wyczyść listy CSV', command=self.on_clear_csv_list, style='Compact.TButton').grid(row=0, column=2, sticky='w', padx=2, pady=2)
-        ttk.Label(sources_frame, text='Tryb CSV', style='Compact.TLabel').grid(row=0, column=3, sticky='e', padx=(2, 2), pady=2)
+        tk.Button(sources_frame, text='Dodaj CSV projektu', command=self.on_add_csv, font=('Segoe UI', 8), padx=2, pady=1).grid(row=0, column=0, sticky='w', padx=2, pady=2)
+        tk.Button(sources_frame, text='Usuń zaznaczony CSV', command=self.on_remove_selected_csv, font=('Segoe UI', 8), padx=2, pady=1).grid(row=0, column=1, sticky='w', padx=2, pady=2)
+        tk.Button(sources_frame, text='Wyczyść listy CSV', command=self.on_clear_csv_list, font=('Segoe UI', 8), padx=2, pady=1).grid(row=0, column=2, sticky='w', padx=2, pady=2)
+        tk.Label(sources_frame, text='Tryb CSV', font=('Segoe UI', 8)).grid(row=0, column=3, sticky='e', padx=(2, 2), pady=2)
         mode = ttk.Combobox(sources_frame, textvariable=self.csv_mode, state='readonly', width=18)
         mode['values'] = ('group_list', 'program_list')
         mode.grid(row=0, column=4, sticky='w', padx=2, pady=2)
         mode.configure(font=self.compact_font)
         mode.bind('<<ComboboxSelected>>', lambda event: self.on_csv_mode_changed())
-        ttk.Button(sources_frame, text='Wybierz folder główny projektu', command=self.on_select_root_folder, style='Compact.TButton').grid(row=0, column=5, sticky='w', padx=2, pady=2)
-        ttk.Button(sources_frame, text='Odśwież folder CNC', command=self.on_refresh_root_folder, style='Compact.TButton').grid(row=0, column=6, sticky='w', padx=2, pady=2)
+        tk.Button(sources_frame, text='Wybierz folder główny projektu', command=self.on_select_root_folder, font=('Segoe UI', 8), padx=2, pady=1).grid(row=0, column=5, sticky='w', padx=2, pady=2)
+        tk.Button(sources_frame, text='Odśwież folder CNC', command=self.on_refresh_root_folder, font=('Segoe UI', 8), padx=2, pady=1).grid(row=0, column=6, sticky='w', padx=2, pady=2)
 
-        self.csv_stats = ttk.Label(sources_frame, text='Pliki CSV: 0', style='Compact.TLabel')
+        self.csv_stats = tk.Label(sources_frame, text='Pliki CSV: 0', font=('Segoe UI', 8))
         self.csv_stats.grid(row=1, column=0, sticky='w', pady=(2, 0))
-        self.csv_items_stats = ttk.Label(sources_frame, text='Pozycje CSV (scalone): 0', style='Compact.TLabel')
+        self.csv_items_stats = tk.Label(sources_frame, text='Pozycje CSV (scalone): 0', font=('Segoe UI', 8))
         self.csv_items_stats.grid(row=1, column=1, columnspan=2, sticky='w', pady=(2, 0))
-        self.root_label = ttk.Label(sources_frame, text='Folder główny: Brak folderu', style='Compact.TLabel')
+        self.root_label = tk.Label(sources_frame, text='Folder główny: Brak folderu', font=('Segoe UI', 8))
         self.root_label.grid(row=1, column=3, columnspan=2, sticky='w', pady=(2, 0))
-        self.root_stats = ttk.Label(sources_frame, text='Pliki .TCN: 0 | Grupy A_: 0', style='Compact.TLabel')
+        self.root_stats = tk.Label(sources_frame, text='Pliki .TCN: 0 | Grupy A_: 0', font=('Segoe UI', 8))
         self.root_stats.grid(row=1, column=5, columnspan=2, sticky='w', pady=(2, 0))
 
         csv_list_frame = ttk.LabelFrame(main, text='Lista plików CSV', padding=4, style='Compact.TLabelframe')
@@ -113,14 +110,14 @@ class ScannerApp(object):
         scan_frame.grid(row=2, column=0, sticky='ew', pady=2)
         scan_frame.grid_columnconfigure(1, weight=1)
 
-        ttk.Label(scan_frame, text='Kod QR', style='Compact.TLabel').grid(row=0, column=0, sticky='w', padx=2, pady=2)
-        self.scan_entry = ttk.Entry(scan_frame)
+        tk.Label(scan_frame, text='Kod QR', font=('Segoe UI', 8)).grid(row=0, column=0, sticky='w', padx=2, pady=2)
+        self.scan_entry = tk.Entry(scan_frame, font=('Segoe UI', 8))
         self.scan_entry.grid(row=0, column=1, sticky='ew', padx=2, pady=2)
-        ttk.Button(scan_frame, text='Dodaj skan', command=self.on_add_scan, style='Compact.TButton').grid(row=0, column=2, sticky='w', padx=2, pady=2)
-        ttk.Button(scan_frame, text='Usuń zaznaczony skan', command=self.on_remove_selected_scan, style='Compact.TButton').grid(row=0, column=3, sticky='w', padx=2, pady=2)
-        ttk.Button(scan_frame, text='Wyczyść skany', command=self.on_clear_scans, style='Compact.TButton').grid(row=0, column=4, sticky='w', padx=2, pady=2)
+        tk.Button(scan_frame, text='Dodaj skan', command=self.on_add_scan, font=('Segoe UI', 8), padx=2, pady=1).grid(row=0, column=2, sticky='w', padx=2, pady=2)
+        tk.Button(scan_frame, text='Usuń zaznaczony skan', command=self.on_remove_selected_scan, font=('Segoe UI', 8), padx=2, pady=1).grid(row=0, column=3, sticky='w', padx=2, pady=2)
+        tk.Button(scan_frame, text='Wyczyść skany', command=self.on_clear_scans, font=('Segoe UI', 8), padx=2, pady=1).grid(row=0, column=4, sticky='w', padx=2, pady=2)
 
-        self.scan_preview = ttk.Label(scan_frame, text='Oryginalny kod: - | group_id: - | program_name: - | compare_id: -', style='Compact.TLabel')
+        self.scan_preview = tk.Label(scan_frame, text='Oryginalny kod: - | group_id: - | program_name: - | compare_id: -', font=('Segoe UI', 8))
         self.scan_preview.grid(row=1, column=0, columnspan=5, sticky='w', pady=(2, 2))
 
         scan_list_frame = ttk.Frame(scan_frame)
@@ -134,7 +131,7 @@ class ScannerApp(object):
 
         summary = ttk.LabelFrame(main, text='Podsumowanie', padding=4, style='Compact.TLabelframe')
         summary.grid(row=3, column=0, sticky='ew', pady=2)
-        self.summary_label = ttk.Label(summary, text='CSV: 0 | CNC: 0 | Skany: 0 | OK: 0 | Problemy: 0', style='Compact.TLabel')
+        self.summary_label = tk.Label(summary, text='CSV: 0 | CNC: 0 | Skany: 0 | OK: 0 | Problemy: 0', font=('Segoe UI', 8))
         self.summary_label.grid(row=0, column=0, sticky='w')
 
         live_frame = ttk.LabelFrame(main, text='Bieżąca kontrola CNC', padding=8)
@@ -143,7 +140,7 @@ class ScannerApp(object):
         live_frame.grid_columnconfigure(0, weight=1)
 
         cols = ('nr', 'scan', 'cnc', 'csv', 'qty', 'csv_length', 'tcn_length', 'csv_width', 'tcn_width', 'csv_thickness', 'tcn_thickness', 'edge', 'dim_status', 'status', 'note')
-        self.live_tree = ttk.Treeview(live_frame, columns=cols, show='headings', height=12, style='Treeview')
+        self.live_tree = ttk.Treeview(live_frame, columns=cols, show='headings', height=12, style='Main.Treeview')
         self.live_tree.heading('nr', text='Nr')
         self.live_tree.heading('scan', text='Skan')
         self.live_tree.heading('cnc', text='Program CNC')
@@ -188,8 +185,8 @@ class ScannerApp(object):
 
         report_frame = ttk.LabelFrame(main, text='Raporty', padding=4, style='Compact.TLabelframe')
         report_frame.grid(row=5, column=0, sticky='ew', pady=2)
-        ttk.Button(report_frame, text='Odśwież porównanie', command=self.on_generate_report, style='Compact.TButton').grid(row=0, column=0, sticky='w')
-        ttk.Button(report_frame, text='Eksportuj raport ręcznie', command=self.on_export_report_csv, style='Compact.TButton').grid(row=0, column=1, sticky='w', padx=2)
+        tk.Button(report_frame, text='Odśwież porównanie', command=self.on_generate_report, font=('Segoe UI', 8), padx=2, pady=1).grid(row=0, column=0, sticky='w')
+        tk.Button(report_frame, text='Eksportuj raport ręcznie', command=self.on_export_report_csv, font=('Segoe UI', 8), padx=2, pady=1).grid(row=0, column=1, sticky='w', padx=2)
         self.report_text = tk.Text(report_frame, height=3, font=self.compact_font)
         self.report_text.grid(row=1, column=0, columnspan=2, sticky='ew', pady=(4, 0))
         report_scroll = ttk.Scrollbar(report_frame, orient='vertical', command=self.report_text.yview)
